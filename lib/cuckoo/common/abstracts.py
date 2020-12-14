@@ -685,11 +685,19 @@ class Processing(object):
         self.pmemory_path = os.path.join(self.analysis_path, "memory")
         self.memory_path = os.path.join(self.analysis_path, "memory.dmp")
 
-    def add_statistic(self, name, field, value):
-        if name not in self.results["statistics"]["processing"]:
-            self.results["statistics"]["processing"][name] = {}
+    def add_statistic_tmp(self, name, field, pretime):
+        posttime = datetime.datetime.now()
+        timediff = posttime - pretime
+        value = float("%d.%03d" % (timediff.seconds, timediff.microseconds / 1000))
 
-        self.results["statistics"]["processing"][name][field] = value
+        if name not in self.results["temp_processing_stats"]:
+            self.results["temp_processing_stats"][name] = {}
+
+        # To be able to add yara/capa and others time summary over all processing modules
+        if field in self.results["temp_processing_stats"][name]:
+            self.results["temp_processing_stats"][name][field] += value
+        else:
+            self.results["temp_processing_stats"][name][field] = value
 
     def run(self):
         """Start processing.
@@ -768,9 +776,17 @@ class Signature(object):
                     if re.findall(name, block["name"], re.I):
                         yield "sample", self.results["target"]["file"]["path"], block
 
-        for keyword in ("procdump", "procmemory", "extracted", "dropped", "CAPE"):
+        for block in self.results.get("CAPE", {}).get("payloads", []) or []:
+            for sub_keyword in ("yara", "cape_yara"):
+                for sub_block in block.get(sub_keyword, []):
+                    if re.findall(name, sub_block["name"], re.I):
+                        yield keyword, block["path"], sub_block
+
+        for keyword in ("procdump", "procmemory", "extracted", "dropped"):
             if keyword in self.results and self.results[keyword] is not None:
                 for block in self.results.get(keyword, []):
+                    if not isinstance(block, dict):
+                        continue
                     for sub_keyword in ("yara", "cape_yara"):
                         for sub_block in block.get(sub_keyword, []):
                             if re.findall(name, sub_block["name"], re.I):
@@ -795,12 +811,16 @@ class Signature(object):
                                         yield "extracted_pe", pe["path"], sub_block
 
         macro_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(self.results["info"]["id"]), "macros")
-        for macroname in self.results.get("static", {}).get("office", {}).get("info", []) or []:
-            for yara_block in self.results["static"]["office"]["info"].get("macroname", []) or []:
-                for sub_block in self.results["static"]["office"]["info"]["macroname"].get(yara_block, []) or []:
+        for macroname in self.results.get("static", {}).get("office", {}).get("Macro", {}).get("info", []) or []:
+            for yara_block in self.results["static"]["office"]["Macro"]["info"].get("macroname", []) or []:
+                for sub_block in self.results["static"]["office"]["Macro"]["info"]["macroname"].get(yara_block, []) or []:
                     if re.findall(name, sub_block["name"], re.I):
                         yield "macro", os.path.join(macro_path, macroname), sub_block
 
+        if self.results.get("static", {}).get("office", {}).get("XLMMacroDeobfuscator", False):
+            for sub_block in self.results["static"]["office"]["XLMMacroDeobfuscator"].get("info", []).get("yara_macro", []) or []:
+                if re.findall(name, sub_block["name"], re.I):
+                    yield "macro", os.path.join(macro_path, "xlm_macro"), sub_block
 
         yield False, False, False
 
@@ -822,7 +842,7 @@ class Signature(object):
         if os.path.exists(logs):
             pids += [pidb.replace(".bson", "") for pidb in os.listdir(logs) if ".bson" in pidb]
 
-        #  in case if injection not follows
+        #  in case if injection not follows
         if "procmemory" in self.results and self.results["procmemory"] is not None:
             pids += [str(block["pid"]) for block in self.results["procmemory"]]
         if "procdump" in self.results and self.results["procdump"] is not None:

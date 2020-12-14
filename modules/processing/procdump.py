@@ -5,10 +5,14 @@
 from __future__ import absolute_import
 import os
 import json
+from datetime import datetime
 from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.objects import File
+from lib.cuckoo.common.config import Config
 from lib.cuckoo.common.utils import convert_to_printable
+from lib.cuckoo.common.cape_utils import flare_capa_details
 
+processing_conf = Config("processing")
 
 class ProcDump(Processing):
     """ProcDump files analysis."""
@@ -37,8 +41,12 @@ class ProcDump(Processing):
         file_names = os.listdir(self.procdump_path)
         for file_name in file_names:
             file_path = os.path.join(self.procdump_path, file_name)
-
-            file_info = File(file_path=file_path, guest_paths=meta[file_path]["metadata"], file_name=file_name).get_all()
+            if not meta.get(file_path):
+                continue
+            file_info, pefile_object = File(file_path=file_path, guest_paths=meta[file_path]["metadata"], file_name=file_name).get_all()
+            if pefile_object:
+                self.results.setdefault("pefiles", {})
+                self.results["pefiles"].setdefault(file_info["sha256"], pefile_object)
             metastrings = meta[file_path].get("metadata", "").split(";?")
             if len(metastrings) < 3:
                 continue
@@ -79,6 +87,12 @@ class ProcDump(Processing):
                     file_info["data"] = convert_to_printable(filedata[:buf] + " <truncated>")
                 else:
                     file_info["data"] = convert_to_printable(filedata)
+
+            pretime = datetime.now()
+            capa_details = flare_capa_details(file_path, "procdump")
+            if capa_details:
+                file_info["flare_capa"] = capa_details
+            self.add_statistic_tmp("flare_capa", "time", pretime)
 
             procdump_files.append(file_info)
 

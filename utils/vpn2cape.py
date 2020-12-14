@@ -7,21 +7,19 @@ import argparse
 #   VPN intergrator for CAPE
 #   Quick and Dirty script by doomedraven to preparate configs for vpn integration
 
-vpns = list()
-
-template = """
+def main():
+    rt_table = dict()
+    templates = list()
+    paths = list()
+    vpns = list()
+    template = """
 [vpn_{id}]
+# rename this to something different, you will use thil field to see in webgui or set in routing.conf
 name = {vpn_path}
 description = {description}
 interface = tun{id}
 rt_table = {rt}
 """
-
-
-def main():
-    rt_table = dict()
-    templates = list()
-    paths = list()
 
     files = os.listdir(sys.argv[1])
     for index, file in enumerate(files):
@@ -58,7 +56,7 @@ def main():
             vpns.append("vpn_{0}".format(index + 1))
 
             file = file.replace(" ", "\ ")
-            paths.append("sudo openvpn --config VyprVPN/{0} --script-security 2 --route-noexec --route-up utils/route.py &".format(file))
+            paths.append("sudo openvpn --config {0} --script-security 2 --route-noexec --route-up utils/route.py &".format(file))
             if write:
                 # updatign config
                 tmp2 = open(path, "wt")
