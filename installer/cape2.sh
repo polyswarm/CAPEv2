@@ -1,4 +1,5 @@
 #!/bin/bash
+set -ex
 # By @doomedraven - https://twitter.com/D00m3dR4v3n
 # Copyright (C) 2011-2023 doomedraven.
 # See the file 'LICENSE.md' for copying permission.
@@ -664,10 +665,6 @@ function install_suricata() {
         cp "/var/lib/suricata/rules/"* "/etc/suricata/rules/"
     fi
 
-    # ToDo this is not the best solution but i don't have time now to investigate proper one
-    sed -i 's|CapabilityBoundingSet=CAP_NET_ADMIN|#CapabilityBoundingSet=CAP_NET_ADMIN|g' /lib/systemd/system/suricata.service
-    systemctl daemon-reload
-
     #change suricata yaml
     sed -i 's|#default-rule-path: /etc/suricata/rules|default-rule-path: /etc/suricata/rules|g' /etc/default/suricata
     sed -i 's|default-rule-path: /var/lib/suricata/rules|default-rule-path: /etc/suricata/rules|g' /etc/suricata/suricata.yaml
@@ -700,14 +697,14 @@ function install_suricata() {
 
     chown ${USER}:${USER} -R /etc/suricata
     chown ${USER}:${USER} -R /var/log/suricata
-    systemctl restart suricata
 }
 
 function install_yara() {
     echo '[+] Checking for old YARA version to uninstall'
-    dpkg -l|grep "yara-v[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all 2>/dev/null
+    dpkg -l|grep "yara-v[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all || true 2>/dev/null
 
     echo '[+] Installing Yara'
+    export CFLAGS="$CFLAGS -DBUCKETS_128=1 -DCHECKSUM_1B=1"
 
     apt install libtool libjansson-dev libmagic1 libmagic-dev jq autoconf -y
 
@@ -744,6 +741,7 @@ function install_yara() {
     # Temp workarond to fix issues compiling yara-python https://github.com/VirusTotal/yara-python/issues/212
     # partially applying PR https://github.com/VirusTotal/yara-python/pull/210/files
     # sed -i "191 i \ \ \ \ # Needed to build tlsh'\n    module.define_macros.extend([('BUCKETS_128', 1), ('CHECKSUM_1B', 1)])\n    # Needed to build authenticode parser\n    module.libraries.append('ssl')" setup.py
+    git checkout ${YARA_PYTHON_GITHUB_SHA}
     python3 setup.py build --enable-cuckoo --enable-magic --enable-profiling
     cd ..
     # for root
@@ -869,14 +867,13 @@ function install_postgresql() {
     # amazing tool for monitoring https://github.com/dalibo/pg_activity
     # sudo -u postgres pg_activity -U postgres
     python3 -m pip install pg_activity psycopg2-binary
-    sudo systemctl enable postgresql.service
-    sudo systemctl start postgresql.service
 }
 
 function dependencies() {
     echo "[+] Installing dependencies"
 
-    timedatectl set-timezone UTC
+    mkdir -p /etc/apt/keyrings/
+
     export LANGUAGE=en_US.UTF-8
     export LANG=en_US.UTF-8
     export LC_ALL=en_US.UTF-8
@@ -912,7 +909,7 @@ function dependencies() {
     cd capa || return
     git pull
     git submodule update --init rules
-    pip3 install .
+    pip3 install --ignore-installed .
 
     # re2
     apt install libre2-dev -y
@@ -922,15 +919,8 @@ function dependencies() {
 
     install_postgresql
 
-    sudo -u postgres -H sh -c "psql -c \"CREATE USER ${USER} WITH PASSWORD '$PASSWD'\"";
-    sudo -u postgres -H sh -c "psql -c \"CREATE DATABASE ${USER}\"";
-    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"GRANT ALL PRIVILEGES ON DATABASE ${USER} to ${USER};\""
-    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE ${USER} OWNER TO ${USER};\""
-
     apt install apparmor-utils -y
     TCPDUMP_PATH=`which tcpdump`
-    aa-complain ${TCPDUMP_PATH}
-    aa-disable ${TCPDUMP_PATH}
 
     if id "${USER}" &>/dev/null; then
         echo "user ${USER} already exist"
@@ -965,10 +955,6 @@ SocksTimeout ${TOR_SOCKET_TIMEOUT}
 ControlPort 9051
 HashedControlPassword 16:D14CC89AD7848B8C60093105E8284A2D3AB2CF3C20D95FECA0848CFAD2
 EOF
-
-    #Then restart Tor:
-    sudo systemctl enable tor
-    sudo systemctl start tor
 
     #Edit the Privoxy configuration
     #sudo sed -i 's/R#        forward-socks5t             /     127.0.0.1:9050 ./        forward-socks5t             /     127.0.0.1:9050 ./g' /etc/privoxy/config
@@ -1014,9 +1000,6 @@ EOF
     if ! grep -q -E '^net.ipv4.ip_forward=1' /etc/sysctl.conf; then
         echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
     fi
-
-    sudo modprobe br_netfilter
-    sudo sysctl -p
 
     ### PDNS
     sudo apt install git binutils-dev libldns-dev libpcap-dev libdate-simple-perl libdatetime-perl libdbd-mysql-perl -y
@@ -1168,18 +1151,16 @@ function install_CAPE() {
     echo "[+] Installing CAPEv2"
 
     cd /opt || return
-    git clone https://github.com/kevoreilly/CAPEv2/
     #chown -R root:${USER} /usr/var/malheur/
     #chmod -R =rwX,g=rwX,o=X /usr/var/malheur/
     # Adapting owner permissions to the ${USER} path folder
     cd "/opt/CAPEv2/" || return
     pip3 install poetry crudini
-    CRYPTOGRAPHY_DONT_BUILD_RUST=1 sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry install'
     sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry run extra/libvirt_installer.sh'
     #packages are needed for build options in extra/yara_installer.sh
     apt install libjansson-dev libmagic1 libmagic-dev -y
     sudo -u ${USER} bash -c 'poetry run extra/yara_installer.sh'
-    sudo rm -r yara-python
+    sudo rm -r yara-python || true
 
     sudo usermod -aG kvm ${USER}
     sudo usermod -aG libvirt ${USER}
@@ -1195,27 +1176,29 @@ function install_CAPE() {
 
     chown ${USER}:${USER} -R "/opt/CAPEv2/"
 
-	# default is enabled, so we only need to disable it
-	if [ "$MONGO_ENABLE" -lt 1 ]; then
-		crudini --set conf/reporting.conf mongodb enabled no
-	fi
+    # default is enabled, so we only need to disable it
+    if [ "$MONGO_ENABLE" -lt 1 ]; then
+      crudini --set conf/reporting.conf mongodb enabled no
+    fi
 
-	if [ "$librenms_enable" -ge 1 ]; then
-		crudini --set conf/reporting.conf litereport enabled yes
-		crudini --set conf/reporting.conf runstatistics enabled yes
-	fi
+    if [ "$librenms_enable" -ge 1 ]; then
+      crudini --set conf/reporting.conf litereport enabled yes
+      crudini --set conf/reporting.conf runstatistics enabled yes
+    fi
 
     python3 utils/community.py -waf -cr
 
     # Configure direct internet connection
     sudo echo "400 ${INTERNET_IFACE}" >> /etc/iproute2/rt_tables
 
-if [ ! -f /etc/sudoers.d/cape ]; then
-    cat >> /etc/sudoers.d/cape << EOF
+    if [ ! -f /etc/sudoers.d/cape ]; then
+        cat >> /etc/sudoers.d/cape << EOF
 Cmnd_Alias CAPE_SERVICES = /usr/bin/systemctl restart cape-rooter, /usr/bin/systemctl restart cape-processor, /usr/bin/systemctl restart cape, /usr/bin/systemctl restart cape-web, /usr/bin/systemctl restart cape-dist, /usr/bin/systemctl restart cape-fstab, /usr/bin/systemctl restart suricata, /usr/bin/systemctl restart guac-web, /usr/bin/systemctl restart guacd
 ${USER} ALL=(ALL) NOPASSWD:CAPE_SERVICES
 EOF
-fi
+    fi
+
+    sed -i 's/security_driver = "apparmor"/security_driver = "none"/g' /etc/libvirt/qemu.conf
 }
 
 function install_systemd() {
@@ -1225,13 +1208,6 @@ function install_systemd() {
     cp /opt/CAPEv2/systemd/cape-web.service /lib/systemd/system/cape-web.service
     cp /opt/CAPEv2/systemd/cape-rooter.service /lib/systemd/system/cape-rooter.service
     cp /opt/CAPEv2/systemd/suricata.service /lib/systemd/system/suricata.service
-    systemctl daemon-reload
-	cape_web_enable_string=''
-	if [ "$MONGO_ENABLE" -ge 1 ]; then
-		cape_web_enable_string="cape-web"
-	fi
-    systemctl enable cape cape-rooter cape-processor "$cape_web_enable_string" suricata
-    systemctl restart cape cape-rooter cape-processor "$cape_web_enable_string" suricata
 }
 
 
