@@ -704,7 +704,6 @@ function install_yara() {
     dpkg -l|grep "yara-v[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all || true 2>/dev/null
 
     echo '[+] Installing Yara'
-    export CFLAGS="$CFLAGS -DBUCKETS_128=1 -DCHECKSUM_1B=1"
 
     apt install libtool libjansson-dev libmagic1 libmagic-dev jq autoconf -y
 
@@ -730,35 +729,6 @@ function install_yara() {
     dpkg -i --force-overwrite /tmp/yara_builded.deb
     #checkinstall -D --pkgname="yara-$yara_version" --pkgversion="$yara_version_only" --default
     ldconfig
-
-    cd /tmp || return
-    git clone --recursive https://github.com/VirusTotal/yara-python
-    cd yara-python
-    # checkout tag v4.2.3 to work around broken master branch
-    # git checkout tags/v4.2.3
-    # sometimes it requires to have a copy of YARA inside of yara-python for proper compilation
-    # git clone --recursive https://github.com/VirusTotal/yara
-    # Temp workarond to fix issues compiling yara-python https://github.com/VirusTotal/yara-python/issues/212
-    # partially applying PR https://github.com/VirusTotal/yara-python/pull/210/files
-    # sed -i "191 i \ \ \ \ # Needed to build tlsh'\n    module.define_macros.extend([('BUCKETS_128', 1), ('CHECKSUM_1B', 1)])\n    # Needed to build authenticode parser\n    module.libraries.append('ssl')" setup.py
-    git checkout ${YARA_PYTHON_GITHUB_SHA}
-    python3 setup.py build --enable-cuckoo --enable-magic --enable-profiling
-    cd ..
-    # for root
-    pip3 install ./yara-python
-    if [ -d yara-python ]; then
-        rm -r yara-python
-    fi
-
-    if id "cape" >/dev/null 2>&1; then
-        cd /opt/CAPEv2/
-        sudo -u cape poetry run extra/yara_installer.sh
-        cd -
-    fi
-    if [ -d yara-python ]; then
-        rm -r yara-python
-    fi
-
 }
 
 function install_mongo(){
@@ -1156,10 +1126,12 @@ function install_CAPE() {
     # Adapting owner permissions to the ${USER} path folder
     cd "/opt/CAPEv2/" || return
     pip3 install poetry crudini
+    sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry run extra/conflicting_dependencies.sh'
+    sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry install'
     sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry run extra/libvirt_installer.sh'
     #packages are needed for build options in extra/yara_installer.sh
     apt install libjansson-dev libmagic1 libmagic-dev -y
-    sudo -u ${USER} bash -c 'poetry run extra/yara_installer.sh'
+    sudo -u ${USER} bash -c "YARA_PYTHON_GITHUB_SHA=${YARA_PYTHON_GITHUB_SHA} poetry run extra/yara_installer.sh"
     sudo rm -r yara-python || true
 
     sudo usermod -aG kvm ${USER}
