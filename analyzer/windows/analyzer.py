@@ -350,8 +350,8 @@ class Analyzer:
         else:
             log.info("analysis running as a normal user")
 
-        print("===============self.config.package")
-        print(self.config.package)
+        log.info("===============self.config.package")
+        log.info(self.config.package)
         # If no analysis package was specified at submission, we try to select one automatically.
         if not self.config.package:
             log.debug("No analysis package specified, trying to detect it automagically")
@@ -365,7 +365,7 @@ class Analyzer:
 
             # If we weren't able to automatically determine the proper package, we need to abort the analysis.
             if not package:
-                print('not package!')
+                log.info('not package!')
                 raise CuckooError(f"No valid package available for file type: {self.config.file_type}")
 
             log.info('Automatically selected analysis package "%s"', package)
@@ -376,7 +376,7 @@ class Analyzer:
 
         # Generate the package path.
         package_name = f"modules.packages.{package}"
-        print("package_name", package_name)
+        log.exception("package_name", package_name)
         # Try to import the analysis package.
         try:
             log.debug('Importing analysis package "%s"...', package)
@@ -1410,7 +1410,7 @@ if __name__ == "__main__":
 
     # When user set wrong package, Example: Emotet package when submit doc, package only is for EXE!
     except CuckooError as e:
-        print(e)
+        log.exception(e)
         log.info("You probably submitted the job with wrong package", exc_info=True)
         data["status"] = "exception"
         data["description"] = "You probably submitted the job with wrong package"
@@ -1418,6 +1418,7 @@ if __name__ == "__main__":
             with urlopen("http://127.0.0.1:8000/status", urlencode(data).encode()) as response:
                 response.read()
         except Exception as e:
+            log.error('======================')
             print(e)
         sys.exit()
     # This is not likely to happen.
