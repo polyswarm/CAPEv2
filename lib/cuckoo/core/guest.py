@@ -325,8 +325,8 @@ class GuestManager:
 
         # Debug analyzer.py in vm
         if "CAPE_DBG" in os.environ:
-            while True:
-                pass
+            # change this to input so we can resume
+            input("CAPE DBG enabled. Introduce any text to resume")
 
         if "execpy" in features:
             data = {
@@ -350,6 +350,11 @@ class GuestManager:
         start = timeit.default_timer()
 
         while db.guest_get_status(self.task_id) == "running" and self.do_run:
+            if cfg.cuckoo.machinery_screenshots:
+                if count == 0:
+                    # indicate screenshot captures have started
+                    log.info("Task #%s: Started capturing screenshots for %s", self.task_id, self.vmid)
+                self.analysis_manager.screenshot_machine()
             if count >= 5:
                 log.debug("Task #%s: Analysis is still running (id=%s, ip=%s)", self.task_id, self.vmid, self.ipaddr)
                 count = 0

@@ -47,6 +47,7 @@ BANNED_PATH_CHARS = b"\x00:"
 RESULT_UPLOADABLE = (
     b"CAPE",
     b"aux",
+    b"aux/amsi",
     b"curtain",
     b"debugger",
     b"tlsdump",
@@ -156,6 +157,11 @@ class HandlerContext:
             fd.write(buf)
         fd.flush()
 
+    def discard(self):
+        self.drain_buffer()
+        while _ := self.read():
+            pass
+
 
 class WriteLimiter:
     def __init__(self, fd, remain):
@@ -166,14 +172,17 @@ class WriteLimiter:
     def write(self, buf):
         size = len(buf)
         write = min(size, self.remain)
-        if write:
-            self.fd.write(buf[:write])
-            self.remain -= write
-        if size and size != write:
-            if not self.warned:
-                log.warning("Uploaded file length larger than upload_max_size, stopping upload")
-                self.fd.write(b"... (truncated)")
-                self.warned = True
+        try:
+            if write:
+                self.fd.write(buf[:write])
+                self.remain -= write
+            if size and size != write:
+                if not self.warned:
+                    log.warning("Uploaded file length larger than upload_max_size, stopping upload")
+                    self.fd.write(b"... (truncated)")
+                    self.warned = True
+        except Exception as e:
+            log.debug("Failed to upload file due to '%s'", e)
 
     def flush(self):
         self.fd.flush()
@@ -191,6 +200,10 @@ class FileUpload(ProtocolHandler):
         # shots/0001.jpg or files/9498687557/libcurl-4.dll.bin
         self.handler.sock.settimeout(30)
         dump_path = netlog_sanitize_fname(self.handler.read_newline())
+        if cfg.cuckoo.machinery_screenshots and dump_path.startswith(b"shots/"):
+            log.debug("Task #%s: discarding screenshot; machinery screenshots enabled", self.task_id)
+            self.handler.discard()
+            return
 
         if self.version and self.version >= 2:
             # NB: filepath is only used as metadata
@@ -246,7 +259,18 @@ class FileUpload(ProtocolHandler):
             self.handler.sock.settimeout(None)
             try:
                 return self.handler.copy_to_fd(self.fd, self.upload_max_size)
-            finally:
+            except Exception as e:
+                if self.fd:
+                    log.debug(
+                        "Task #%s: Failed to uploaded file %s of length %s due to '%s'",
+                        self.task_id,
+                        dump_path.decode(),
+                        self.fd.tell(),
+                        e,
+                    )
+                else:
+                    log.debug("Task #%s: Failed to uploaded file %s due to '%s'", self.task_id, dump_path.decode(), e)
+            else:
                 log.debug("Task #%s: Uploaded file %s of length: %s", self.task_id, dump_path.decode(), self.fd.tell())
 
 
