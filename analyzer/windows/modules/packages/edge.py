@@ -6,6 +6,7 @@ class Edge(Package):
 
     PATHS = [
         ("ProgramFiles", "Microsoft", "Edge", "Application", "msedge.exe"),
+        ("ProgramFiles(x86)", "Microsoft", "EdgeCore", "112.0.1722.58", "msedge.exe")
     ]
 
     def start(self, url):
