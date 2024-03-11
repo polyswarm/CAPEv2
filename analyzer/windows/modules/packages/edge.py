@@ -14,7 +14,7 @@ class Edge(Package):
         args = [
             "--disable-features=RendererCodeIntegrity",
             "--disable-extensions",
-            " --no-first-run",
+            "--no-first-run",
             "--no-default-browser-check",
             "--profile-directory=maxine",
         ]
