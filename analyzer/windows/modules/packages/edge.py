@@ -16,4 +16,4 @@ class Edge(Package):
         ]
         args.append('"{}"'.format(url))
         args = " ".join(args)
-        return self.execute(edge, args)
+        return self.execute(edge, args, url)
