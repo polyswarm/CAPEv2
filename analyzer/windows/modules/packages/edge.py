@@ -13,6 +13,10 @@ class Edge(Package):
         edge = self.get_path("msedge.exe")
         args = [
             "--disable-features=RendererCodeIntegrity",
+            "--disable-extensions",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--profile-directory=maxine",
         ]
         args.append('"{}"'.format(url))
         args = " ".join(args)
