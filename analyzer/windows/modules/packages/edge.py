@@ -11,4 +11,9 @@ class Edge(Package):
 
     def start(self, url):
         edge = self.get_path("msedge.exe")
-        return self.execute(edge, f'"{url}"', url)
+        args = [
+            "--disable-features=RendererCodeIntegrity",
+        ]
+        args.append('"{}"'.format(url))
+        args = " ".join(args)
+        return self.execute(edge, args)
