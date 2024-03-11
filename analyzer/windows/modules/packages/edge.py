@@ -16,6 +16,7 @@ class Edge(Package):
             "--disable-extensions",
             " --no-first-run",
             "--no-default-browser-check",
+            "--profile-directory=maxine",
         ]
         args.append('"{}"'.format(url))
         args = " ".join(args)
