@@ -10,4 +10,4 @@ class Edge(Package):
     ]
 
     def start(self, url):
-        return self.execute(url, "", url)
+        return self.execute('"{}"'.format(url), "", '"{}"'.format(url))
