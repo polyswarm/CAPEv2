@@ -1160,9 +1160,9 @@ function install_CAPE() {
       crudini --set conf/reporting.conf mongodb enabled no
     fi
 
-    if [ "$MONGO_ENABLE" -ge 1 ]; then
-      crudini --set conf/reporting.conf mongodb enabled yes
-    fi
+#    if [ "$MONGO_ENABLE" -ge 1 ]; then
+#      crudini --set conf/reporting.conf mongodb enabled yes
+#    fi
 
     if [ "$librenms_enable" -ge 1 ]; then
       crudini --set conf/reporting.conf litereport enabled yes
