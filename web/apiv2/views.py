@@ -1,4 +1,5 @@
 # encoding: utf-8
+import hashlib
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ from urllib.parse import quote
 from wsgiref.util import FileWrapper
 
 import pyzipper
+import requests
 from bson.objectid import ObjectId
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -1067,19 +1069,33 @@ def tasks_delete(request, task_id, status=False):
 
 
 @csrf_exempt
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 def tasks_status(request, task_id):
     if not apiconf.taskstatus.get("enabled"):
         resp = {"error": True, "error_value": "Task status API is disabled"}
         return Response(resp)
 
+    resp = {}
     task = db.view_task(task_id)
     if not task:
         resp = {"error": True, "error_value": "Task does not exist"}
         return Response(resp)
-
-    status = task.to_dict()["status"]
-    resp = {"error": False, "data": status}
+    if request.method == "GET":
+        status = task.to_dict()["status"]
+        resp = {"error": False, "data": status}
+    elif request.method == "POST" and apiconf.user_stop.enabled and request.data.get("status", "") == "finish":
+        machine = db.view_machine(task.machine)
+        # Todo probably add task status if pending
+        if machine.status == "running":
+            try:
+                guest_env = requests.get(f"http://{machine.ip}:8000/environ").json()
+                complete_folder = hashlib.md5(f"cape-{task_id}".encode()).hexdigest()
+                # ToDo proper OS version join
+                dest_folder = f"{guest_env['environ']['TMP']}\\{complete_folder}"
+                r = requests.post(f"http://{machine.ip}:8000/mkdir", data={"dirpath": dest_folder})
+                resp = {"error": r.status_code == 200, "data": r.text}
+            except requests.exceptions.ConnectionError as e:
+                log.error(e)
     return Response(resp)
 
 
@@ -1560,6 +1576,36 @@ def tasks_pcap(request, task_id):
 
 @csrf_exempt
 @api_view(["GET"])
+def tasks_evtx(request, task_id):
+    if not apiconf.taskevtx.get("enabled"):
+        resp = {"error": True, "error_value": "EVTX download API is disabled"}
+        return Response(resp)
+
+    check = validate_task(task_id)
+    if check["error"]:
+        return Response(check)
+
+    rtid = check.get("rtid", 0)
+    if rtid:
+        task_id = rtid
+
+    evtxfile = os.path.join(CUCKOO_ROOT, "storage", "analyses", "%s" % task_id, "evtx", "evtx.zip")
+    if not os.path.normpath(evtxfile).startswith(ANALYSIS_BASE_PATH):
+        return render(request, "error.html", {"error": f"File not found: {os.path.basename(evtxfile)}"})
+    if path_exists(evtxfile):
+        fname = "%s_evtx.zip" % task_id
+        resp = StreamingHttpResponse(FileWrapper(open(evtxfile, "rb")), content_type="application/zip")
+        resp["Content-Length"] = os.path.getsize(evtxfile)
+        resp["Content-Disposition"] = "attachment; filename=" + fname
+        return resp
+
+    else:
+        resp = {"error": True, "error_value": "EVTX does not exist"}
+        return Response(resp)
+
+
+@csrf_exempt
+@api_view(["GET"])
 def tasks_dropped(request, task_id):
     if not apiconf.taskdropped.get("enabled"):
         resp = {"error": True, "error_value": "Dropped File download API is disabled"}
@@ -1881,7 +1927,7 @@ def exit_nodes_list(request):
     resp = {}
     resp["data"] = []
     resp["error"] = False
-    resp["data"] += ["socks:" + sock5["name"] for sock5 in _load_socks5_operational() or []]
+    resp["data"] += ["socks:" + sock5 for sock5 in _load_socks5_operational() or []]
     resp["data"] += ["vpn:" + vpn for vpn in vpns.keys() or []]
     if routing_conf.tor.enabled:
         resp["data"].append("tor")
@@ -1926,12 +1972,15 @@ def cuckoo_status(request):
     else:
         resp["error"] = False
         tasks_dict_with_counts = db.get_tasks_status_count()
+        total_sum = 0
+        if isinstance(tasks_dict_with_counts, dict):
+            total_sum = sum(tasks_dict_with_counts.values())
         resp["data"] = dict(
             version=CUCKOO_VERSION,
             hostname=socket.gethostname(),
             machines=dict(total=len(db.list_machines()), available=db.count_machines_available()),
             tasks=dict(
-                total=sum(tasks_dict_with_counts.values()),
+                total=total_sum,
                 pending=tasks_dict_with_counts.get("pending", 0),
                 running=tasks_dict_with_counts.get("running", 0),
                 completed=tasks_dict_with_counts.get("completed", 0),
@@ -2197,13 +2246,10 @@ def common_download_func(service, request):
         if opts:
             opt_apikey = opts.get("apikey", False)
 
-        if not (settings.VTDL_KEY or opt_apikey) or not settings.VTDL_PATH:
+        if not (settings.VTDL_KEY or opt_apikey):
             resp = {
                 "error": True,
-                "error_value": (
-                    "You specified VirusTotal but must edit the file and specify your VTDL_KEY variable and VTDL_PATH"
-                    " base directory"
-                ),
+                "error_value": ("You specified VirusTotal but must edit the file and specify your VTDL_KEY variable"),
             }
             return Response(resp)
 
