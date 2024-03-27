@@ -21,7 +21,9 @@ import modules.auxiliary
 import modules.feeds
 import modules.processing
 import modules.reporting
-import modules.signatures
+import modules.signatures.all
+import modules.signatures.linux
+import modules.signatures.windows
 from lib.cuckoo.common.colors import cyan, red, yellow
 from lib.cuckoo.common.config import Config
 from lib.cuckoo.common.constants import CUCKOO_ROOT
@@ -116,9 +118,9 @@ def check_configs():
     @raise CuckooStartupError: if config files do not exist.
     """
     configs = [
-        os.path.join(CUCKOO_ROOT, "conf", "cuckoo.conf"),
-        os.path.join(CUCKOO_ROOT, "conf", "reporting.conf"),
-        os.path.join(CUCKOO_ROOT, "conf", "auxiliary.conf"),
+        os.path.join(CUCKOO_ROOT, "conf", "default", "cuckoo.conf.default"),
+        os.path.join(CUCKOO_ROOT, "conf", "default", "reporting.conf.default"),
+        os.path.join(CUCKOO_ROOT, "conf", "default", "auxiliary.conf.default"),
     ]
 
     for config in configs:
@@ -272,7 +274,9 @@ def init_modules():
     # Import all processing modules.
     import_package(modules.processing)
     # Import all signatures.
-    import_package(modules.signatures)
+    import_package(modules.signatures.all)
+    import_package(modules.signatures.windows)
+    import_package(modules.signatures.linux)
     # Import all private signatures
     import_package(custom.signatures)
     if len(os.listdir(os.path.join(CUCKOO_ROOT, "modules", "signatures"))) < 5:
@@ -318,7 +322,7 @@ def init_rooter():
             raise CuckooStartupError(
                 "The rooter is required but it is either not running or it "
                 "has been configured to a different Unix socket path. "
-                "python3 utils/rooter.py -h or systemctl status cape-rooter"
+                "poetry run python utils/rooter.py -h or systemctl status cape-rooter"
             )
 
         if e.strerror == "Connection refused":

@@ -36,7 +36,7 @@ from lib.cuckoo.common.colors import red
 from lib.cuckoo.common.config import Config
 from lib.cuckoo.common.constants import CUCKOO_ROOT
 from lib.cuckoo.common.path_utils import path_delete, path_exists, path_mkdir
-from lib.cuckoo.common.utils import free_space_monitor
+from lib.cuckoo.common.utils import free_space_monitor, get_options
 from lib.cuckoo.core.database import TASK_COMPLETED, TASK_FAILED_PROCESSING, TASK_REPORTED, Database, Task
 from lib.cuckoo.core.plugins import RunProcessing, RunReporting, RunSignatures
 from lib.cuckoo.core.startup import ConsoleHandler, check_linux_dist, init_modules
@@ -63,6 +63,7 @@ check_linux_dist()
 pending_future_map = {}
 pending_task_id_map = {}
 original_proctitle = getproctitle()
+
 
 # https://stackoverflow.com/questions/41105733/limit-ram-usage-to-python-program
 def memory_limit(percentage: float = 0.8):
@@ -102,10 +103,14 @@ def process(
 
     task_dict = task.to_dict() or {}
     task_id = task_dict.get("id") or 0
+    # cluster mode
+    main_task_id = False
+    if "main_task_id" in task_dict.get("options", ""):
+        main_task_id = get_options(task_dict["options"]).get("main_task_id", 0)
 
     # ToDo new logger here
     handlers = init_logging(tid=str(task_id), debug=debug)
-    set_formatter_fmt(task_id)
+    set_formatter_fmt(task_id, main_task_id)
     setproctitle(f"{original_proctitle} [Task {task_id}]")
     results = {"statistics": {"processing": [], "signatures": [], "reporting": []}}
     if memory_debugging:
@@ -159,16 +164,20 @@ def init_worker():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
-def get_formatter_fmt(task_id=None):
-    task_info = f"[Task {task_id}] " if task_id is not None else ""
+def get_formatter_fmt(task_id=None, main_task_id=None):
+    task_info = f"[Task {task_id}" if task_id is not None else ""
+    if main_task_id:
+        task_info += f" ({main_task_id})"
+    if task_id or main_task_id:
+        task_info += "] "
     return f"%(asctime)s {task_info}[%(name)s] %(levelname)s: %(message)s"
 
 
 FORMATTER = logging.Formatter(get_formatter_fmt())
 
 
-def set_formatter_fmt(task_id=None):
-    FORMATTER._style._fmt = get_formatter_fmt(task_id)
+def set_formatter_fmt(task_id=None, main_task_id=None):
+    FORMATTER._style._fmt = get_formatter_fmt(task_id, main_task_id)
 
 
 def init_logging(tid=0, debug=False):
@@ -392,7 +401,7 @@ def main():
     parser.add_argument(
         "id",
         type=parse_id,
-        help="ID of the analysis to process (auto for continuous processing of unprocessed tasks). Can be 1 or 1-10",
+        help="ID of the analysis to process (auto for continuous processing of unprocessed tasks). Can be 1 or 1-10 or 1,3,5,7",
     )
     parser.add_argument("-c", "--caperesubmit", help="Allow CAPE resubmit processing.", action="store_true", required=False)
     parser.add_argument("-d", "--debug", help="Display debug messages", action="store_true", required=False)
@@ -469,13 +478,17 @@ def main():
                     print(red(f"\n[{num}] Analysis folder doesn't exist anymore\n"))
                     continue
                 task = Database().view_task(num)
-                # Add sample lookup as we point to sample from TMP. Case when delete_original=on
-                if not path_exists(task.target):
-                    samples = Database().sample_path_by_hash(task_id=task.id)
-                    for sample in samples:
-                        if path_exists(sample):
-                            task.__setattr__("target", sample)
-                            break
+                if task is None:
+                    task = {"id": num, "target": None}
+                    print("Task not in database")
+                else:
+                    # Add sample lookup as we point to sample from TMP. Case when delete_original=on
+                    if not path_exists(task.target):
+                        samples = Database().sample_path_by_hash(task_id=task.id)
+                        for sample in samples:
+                            if path_exists(sample):
+                                task.__setattr__("target", sample)
+                                break
 
                 if args.signatures:
                     report = False
@@ -494,7 +507,10 @@ def main():
                         # If the "statistics" key-value pair has not been set by now, set it here
                         if "statistics" not in results:
                             results["statistics"] = {"signatures": []}
-                        RunSignatures(task=task.to_dict(), results=results).run(args.signature_name)
+                        if isinstance(task, dict):
+                            RunSignatures(task=task, results=results).run(args.signature_name)
+                        else:
+                            RunSignatures(task=task.to_dict(), results=results).run(args.signature_name)
                         # If you are only running a single signature, print that output
                         if args.signature_name and results["signatures"]:
                             print(results["signatures"][0])

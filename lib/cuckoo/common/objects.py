@@ -374,7 +374,7 @@ class File:
                             self.pe = pefile.PE(data=self.file_data, fast_load=True)
                         except pefile.PEFormatError:
                             self.file_type = "PE image for MS Windows"
-                            log.error("Unable to instantiate pefile on image: %s", self.file_path)
+                            log.debug("Unable to instantiate pefile on image: %s", self.file_path)
                         if self.pe:
                             is_dll = self.pe.is_dll()
                             is_x64 = self.pe.FILE_HEADER.Machine == IMAGE_FILE_MACHINE_AMD64
@@ -442,13 +442,12 @@ class File:
                     log.warning("Missing Yara directory: %s?", category_root)
                     continue
 
-                for category_root, _, filenames in os.walk(category_root, followlinks=True):
-                    for filename in filenames:
-                        if not filename.endswith((".yar", ".yara")):
-                            continue
-                        filepath = os.path.join(category_root, filename)
-                        rules[f"rule_{category}_{len(rules)}"] = filepath
-                        indexed.append(filename)
+                for filename in os.listdir(category_root):
+                    if not filename.endswith((".yar", ".yara")):
+                        continue
+                    filepath = os.path.join(category_root, filename)
+                    rules[f"rule_{category}_{len(rules)}"] = filepath
+                    indexed.append(filename)
 
                 # Need to define each external variable that will be used in the
             # future. Otherwise Yara will complain.
@@ -534,7 +533,7 @@ class File:
 
         return results
 
-    cape_name_regex = re.compile(r" (?:payload|config|loader)$", re.I)
+    cape_name_regex = re.compile(r" (?:payload|config|loader|strings)$", re.I)
 
     @classmethod
     def yara_hit_provides_detection(cls, hit: Dict[str, Any]) -> bool:
@@ -545,14 +544,14 @@ class File:
     def get_cape_name_from_yara_hit(cls, hit: Dict[str, Any]) -> str:
         """Use the cape_type as defined in the metadata for the yara hit
         (e.g. "SocGholish Payload") and return the part before
-        "Loader", "Payload", or "Config".
+        "Loader", "Payload", "Config", or "Strings"
         """
         return cls.get_cape_name_from_cape_type(hit["meta"].get("cape_type", ""))
 
     @classmethod
     def get_cape_name_from_cape_type(cls, cape_type: str) -> str:
         """Return the part of the cape_type (e.g. "SocGholish Payload") preceding
-        " Payload", " Config", or " Loader".
+        " Payload", " Config", " Loader", or " Strings"
         """
         return cls.cape_name_regex.sub("", cape_type)
 

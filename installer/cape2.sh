@@ -19,11 +19,11 @@ PASSWD="SuperPuperSecret"
 # Only in case if you using distributed CAPE And MongoDB sharding.
 DIST_MASTER_IP="192.168.1.1"
 USER="cape"
-nginx_version=1.19.6
+# https://nginx.org/en/linux_packages.html
+nginx_version=1.25.3
 prometheus_version=2.20.1
 grafana_version=7.1.5
 node_exporter_version=1.0.1
-guacamole_version=1.5.2
 # if set to 1, enables snmpd and other various bits to support
 # monitoring via LibreNMS
 librenms_enable=0
@@ -53,7 +53,7 @@ librenms_megaraid_enable=0
 # disabling this will result in the web interface being disabled
 MONGO_ENABLE=1
 
-DIE_VERSION="3.08"
+DIE_VERSION="3.09"
 
 TOR_SOCKET_TIMEOUT="60"
 
@@ -341,13 +341,13 @@ function install_nginx() {
     fi
 
     # PCRE version 8.42
-    wget https://ftp.exim.org/pub/pcre/pcre-8.42.tar.gz && tar xzvf pcre-8.42.tar.gz
+    wget https://ftp.exim.org/pub/pcre/pcre-8.45.tar.gz && tar xzvf pcre-8.45.tar.gz
 
     # zlib version 1.2.11
     wget https://www.zlib.net/zlib-1.3.tar.gz && tar xzvf zlib-1.3.tar.gz
 
-    # OpenSSL version 1.1.0h
-    wget https://www.openssl.org/source/openssl-1.1.0h.tar.gz && tar xzvf openssl-1.1.0h.tar.gz
+    # OpenSSL version 3.2.0
+    wget https://www.openssl.org/source/openssl-3.2.0.tar.gz && tar xzvf openssl-3.2.0.tar.gz
 
     sudo add-apt-repository -y ppa:maxmind/ppa
     sudo apt update && sudo apt upgrade -y
@@ -375,12 +375,12 @@ function install_nginx() {
                 --http-proxy-temp-path=/var/lib/nginx/proxy \
                 --http-scgi-temp-path=/var/lib/nginx/scgi \
                 --http-uwsgi-temp-path=/var/lib/nginx/uwsgi \
-                --with-openssl=../openssl-1.1.0h \
+                --with-openssl=../openssl-3.2.0 \
                 --with-openssl-opt=enable-ec_nistp_64_gcc_128 \
                 --with-openssl-opt=no-nextprotoneg \
                 --with-openssl-opt=no-weak-ssl-ciphers \
                 --with-openssl-opt=no-ssl3 \
-                --with-pcre=../pcre-8.42 \
+                --with-pcre=../pcre-8.45 \
                 --with-pcre-jit \
                 --with-zlib=../zlib-1.3 \
                 --with-compat \
@@ -409,11 +409,19 @@ function install_nginx() {
                 --with-stream_ssl_preread_module \
                 --with-debug \
                 --with-cc-opt='-g -O2 -fPIE -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2' \
-                --with-ld-opt='-Wl,-Bsymbolic-functions -fPIE -pie -Wl,-z,relro -Wl,-z,now'
-                 #--with-http_v3_module \
+                --with-ld-opt='-Wl,-Bsymbolic-functions -fPIE -pie -Wl,-z,relro -Wl,-z,now' \
+                --with-http_v3_module
 
+
+    # checkinstall -D --pkgname="nginx-$nginx_version" --pkgversion="$nginx_version" --default
+    mkdir -p /tmp/nginx_builded/DEBIAN
     make -j"$(nproc)"
-    checkinstall -D --pkgname="nginx-$nginx_version" --pkgversion="$nginx_version" --default
+    echo -e "Package: nginx\nVersion: $nginx_version\nArchitecture: $ARCH\nMaintainer: $MAINTAINER\nDescription: nginx-$nginx_version" > /tmp/nginx_builded/DEBIAN/control
+    make -j"$(nproc)" install DESTDIR=/tmp/nginx_builded
+    dpkg-deb --build --root-owner-group /tmp/nginx_builded
+    dpkg -i --force-overwrite /tmp/nginx_builded.deb
+    rm /tmp/nginx_builded.deb
+
     sudo ln -s /usr/lib/nginx/modules /etc/nginx/modules
     sudo adduser --system --home /nonexistent --shell /bin/false --no-create-home --disabled-login --disabled-password --gecos "nginx user" --group nginx
 
@@ -594,9 +602,7 @@ EOF
 
 function redsocks2() {
     cd /tmp || return
-    sudo apt install -y git libevent-dev libreadline-dev zlib1g-dev libncurses5-dev
-    sudo apt install -y libssl1.0-dev 2>/dev/null
-    sudo apt install -y libssl-dev 2>/dev/null
+    sudo apt install -y git libevent-dev libreadline-dev zlib1g-dev libncurses5-dev libssl1.0-dev libssl-dev
     git clone https://github.com/semigodking/redsocks redsocks2 && cd redsocks2 || return
     DISABLE_SHADOWSOCKS=true make -j"$(nproc)" #ENABLE_STATIC=true
     sudo cp redsocks2 /usr/bin/
@@ -742,7 +748,7 @@ function install_mongo(){
 			MONGO_VERSION="4.4"
 		fi
 
-		sudo curl -fsSL "https://www.mongodb.org/static/pgp/server-${MONGO_VERSION}.asc" | sudo gpg --dearmor -o /etc/apt/keyrings/mongo.gpg --yes
+		sudo curl -fsSL "https://pgp.mongodb.com/server-${MONGO_VERSION}.asc" | sudo gpg --dearmor -o /etc/apt/keyrings/mongo.gpg --yes
 		echo "deb [signed-by=/etc/apt/keyrings/mongo.gpg arch=amd64] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/${MONGO_VERSION} multiverse" > /etc/apt/sources.list.d/mongodb.list
 
 		apt update 2>/dev/null
@@ -913,6 +919,7 @@ function dependencies() {
 
 
     sudo apt update 2>/dev/null
+    sudo systemctl stop tor@default.service && sudo systemctl disable tor@default.service
     apt install tor deb.torproject.org-keyring libzstd1 -y
 
     sed -i 's/#RunAsDaemon 1/RunAsDaemon 1/g' /etc/tor/torrc
@@ -1138,7 +1145,7 @@ function install_CAPE() {
     sudo usermod -aG libvirt ${USER}
 
     # copy *.conf.default to *.conf so we have all properly updated fields, as we can't ignore old configs in repository
-    for filename in conf/*.conf.default; do cp -vf "./$filename" "./$(echo "$filename" | sed -e 's/.default//g')";  done
+    for filename in conf/default/*.conf.default; do cp -vf "./$filename" "./$(echo "$filename" | sed -e 's/.default//g' | sed -e 's/default//g')";  done
 
     sed -i "/connection =/cconnection = postgresql://${USER}:${PASSWD}@localhost:5432/${USER}" conf/cuckoo.conf
     # sed -i "/tor/{n;s/enabled = no/enabled = yes/g}" conf/routing.conf
@@ -1152,6 +1159,10 @@ function install_CAPE() {
     if [ "$MONGO_ENABLE" -lt 1 ]; then
       crudini --set conf/reporting.conf mongodb enabled no
     fi
+
+#    if [ "$MONGO_ENABLE" -ge 1 ]; then
+#      crudini --set conf/reporting.conf mongodb enabled yes
+#    fi
 
     if [ "$librenms_enable" -ge 1 ]; then
       crudini --set conf/reporting.conf litereport enabled yes
@@ -1235,6 +1246,8 @@ function install_guacamole() {
     fi
     cd /tmp/guac-build || return
 
+    guacamole_version=$(curl -s https://downloads.apache.org/guacamole/|grep DIR|tail -1|cut -d">" -f 3| cut -d"/" -f 1)
+
     if [ ! -f "guacamole-server-"$guacamole_version".tar.gz" ] ; then
         wget https://downloads.apache.org/guacamole/"$guacamole_version"/source/guacamole-server-"$guacamole_version".tar.gz
         wget https://downloads.apache.org/guacamole/"$guacamole_version"/source/guacamole-server-"$guacamole_version".tar.gz.asc
@@ -1284,6 +1297,13 @@ function install_guacamole() {
 function install_DIE() {
     apt install libqt5opengl5 libqt5script5 libqt5scripttools5 libqt5sql5 -y
     wget "https://github.com/horsicq/DIE-engine/releases/download/${DIE_VERSION}/die_${DIE_VERSION}_Ubuntu_${UBUNTU_VERSION}_amd64.deb" -O DIE.deb && dpkg -i DIE.deb
+}
+
+function install_fluentd() {
+    curl -sSO https://dl.google.com/cloudagents/add-logging-agent-repo.sh && sudo bash add-logging-agent-repo.sh
+    sudo apt-get update && sudo apt-get install google-fluentd
+    sudo apt-get install -y google-fluentd-catch-all-config-structured
+    sudo service google-fluentd start && sudo service google-fluentd status
 }
 
 # Doesn't work ${$1,,}
@@ -1418,6 +1438,8 @@ case "$COMMAND" in
     install_crowdsecurity;;
 'die')
     install_DIE;;
+'fluentd')
+    install_fluentd;;
 *)
     usage;;
 esac

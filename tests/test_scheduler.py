@@ -120,6 +120,7 @@ class TestAnalysisManager:
             "reschedule": False,
             "rooter": "/tmp/cuckoo-rooter",
             "machinery": "kvm",
+            "machinery_screenshots": False,
             "delete_archive": True,
             "max_vmstartup_count": 5,
             "daydelta": 0,
@@ -129,6 +130,8 @@ class TestAnalysisManager:
             "sanitize_to_len": 24,
             "scaling_semaphore": False,
             "scaling_semaphore_update_timer": 10,
+            "batch_scheduling": False,
+            "max_batch_count": 20,
             "freespace_processing": 15000,
             "periodic_log": False,
             "fail_unserviceable": True,
@@ -342,6 +345,7 @@ class TestAnalysisManager:
         opts = analysis_man.build_options()
         opts["target"] = opts["target"].rsplit("/", 1)[-1]
         assert opts == {
+            "amsi": False,
             "category": "file",
             "exports": "",
             "target": "test_scheduler.py",
@@ -374,7 +378,6 @@ class TestAnalysisManager:
             "usage": False,
             "human_linux": False,
             "human_windows": True,
-            "stap": False,
             "id": 1234,
             "do_upload_max_size": 0,
             "upload_max_size": 100000000,

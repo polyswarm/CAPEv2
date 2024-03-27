@@ -17,7 +17,7 @@ import traceback
 from ctypes import byref, c_buffer, c_int, create_string_buffer, sizeof, wintypes
 from pathlib import Path
 from shutil import copy
-from threading import Lock
+from threading import Lock, Thread
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -34,11 +34,19 @@ from lib.common.constants import (
     SHUTDOWN_MUTEX,
     TERMINATE_EVENT,
 )
-from lib.common.defines import ADVAPI32, EVENT_MODIFY_STATE, KERNEL32, MAX_PATH, PROCESS_QUERY_LIMITED_INFORMATION, PSAPI, SHELL32
+from lib.common.defines import (
+    ADVAPI32,
+    EVENT_MODIFY_STATE,
+    KERNEL32,
+    MAX_PATH,
+    PROCESS_QUERY_LIMITED_INFORMATION,
+    PSAPI,
+    SHELL32,
+    USER32,
+)
 from lib.common.exceptions import CuckooError, CuckooPackageError
 from lib.common.hashing import hash_file
 from lib.common.results import upload_to_host
-from lib.core.compound import create_custom_folders
 from lib.core.config import Config
 from lib.core.packages import choose_package
 from lib.core.pipe import PipeDispatcher, PipeForwarder, PipeServer, disconnect_pipes
@@ -82,6 +90,12 @@ def pid_from_service_name(servicename):
     return thepid
 
 
+def get_explorer_pid():
+    explorer_pid = c_int(0)
+    USER32.GetWindowThreadProcessId(USER32.GetShellWindow(), byref(explorer_pid))
+    return explorer_pid.value
+
+
 def pids_from_image_names(suffixlist):
     """Get PIDs for processes whose image name ends with one of the given suffixes.
 
@@ -105,12 +119,12 @@ def pids_from_image_names(suffixlist):
     for pid in pids:
         h_process = KERNEL32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not h_process:
-            log.debug("kernel.OpenProcess failed for PID: %d", pid)
+            # log.debug("kernel32.OpenProcess failed for pid: %d", pid)
             continue
         n = PSAPI.GetProcessImageFileNameA(h_process, image_name, MAX_PATH)
         KERNEL32.CloseHandle(h_process)
         if not n:
-            log.debug("psapi.GetProcessImageFileNameA failed for PID: %d", pid)
+            # log.debug("psapi.GetProcessImageFileNameA failed for pid: %d", pid)
             continue
         image_name_pystr = image_name.value.decode().lower()
         # e.g., image name: "\device\harddiskvolume4\windows\system32\services.exe"
@@ -402,9 +416,6 @@ class Analyzer:
         # E.g., for some samples it might be useful to run from %APPDATA%
         # instead of %TEMP%.
         if self.config.category == "file":
-            # Try to create the folders for the cases of the custom paths other than %TEMP%
-            if "curdir" in self.options:
-                create_custom_folders(self.options["curdir"])
             self.target = self.package.move_curdir(self.target)
         log.debug("New location of moved file: %s", self.target)
 
@@ -454,6 +465,22 @@ class Analyzer:
         else:
             copy("bin\\loader_x64.exe", LOADER64_NAME)
 
+        si = subprocess.STARTUPINFO()
+        # STARTF_USESHOWWINDOW
+        si.dwFlags = 1
+        # SW_HIDE
+        si.wShowWindow = 0
+
+        # Force update of Windows certificates offline if update file exist
+        # To generate offline certs dump file run: CertUtil -generateSSTFromWU dump.sst
+        if os.path.exists("data\\dump.sst"):
+            try:
+                _ = subprocess.check_output(
+                    ["certutil", "-addstore", "-enterprise", "Root", "data\\dump.sst"], universal_newlines=True, startupinfo=si
+                )
+            except Exception as e:
+                log.error("Can't update certificates: %s", str(e))
+
         # Initialize Auxiliary modules
         Auxiliary()
         prefix = f"{auxiliary.__name__}."
@@ -493,7 +520,6 @@ class Analyzer:
                 # else:
                 log.debug('Trying to start auxiliary module "%s"...', module.__name__)
                 aux.start()
-                log.debug('Started auxiliary module "%s"', module.__name__)
             except (NotImplementedError, AttributeError) as e:
                 log.warning("Auxiliary module %s was not implemented: %s", module.__name__, e)
             except Exception as e:
@@ -521,11 +547,6 @@ class Analyzer:
         zer0m0n.dumpint(int(self.options.get("dumpint", 0)))
         """
 
-        si = subprocess.STARTUPINFO()
-        # STARTF_USESHOWWINDOW
-        si.dwFlags = 1
-        # SW_HIDE
-        si.wShowWindow = 0
         # log.info("Stopping WMI Service")
         subprocess.call(["net", "stop", "winmgmt", "/y"], startupinfo=si)
         # log.info("Stopped WMI Service")
@@ -540,7 +561,7 @@ class Analyzer:
         try:
             pids = self.package.start(self.target)
         except NotImplementedError as e:
-            raise CuckooError('The package "{package_name}" doesn\'t contain a start function') from e
+            raise CuckooError(f'The package "{package_name}" doesn\'t contain a start function') from e
         except CuckooPackageError as e:
             raise CuckooError(f'The package "{package_name}" start function raised an error: {e}') from e
         except Exception as e:
@@ -569,11 +590,18 @@ class Analyzer:
         kernel_analysis = self.options.get("kernel_analysis", False)
 
         emptytime = None
-
+        complete_folder = hashlib.md5(f"cape-{self.config.id}".encode()).hexdigest()
+        complete_analysis_pattern = os.path.join(os.environ["TMP"], complete_folder)
+        # log.info("Complete analysis folder is: %s", complete_analysis_pattern)
         while self.do_run:
             self.time_counter = timeit.default_timer() - time_start
             if self.time_counter >= int(self.config.timeout):
                 log.info("Analysis timeout hit, terminating analysis")
+                ANALYSIS_TIMED_OUT = True
+                break
+
+            if os.path.isdir(complete_analysis_pattern):
+                log.info("Analysis termination requested by user")
                 ANALYSIS_TIMED_OUT = True
                 break
 
@@ -703,6 +731,10 @@ class Analyzer:
             try:
                 log.info("Stopping auxiliary module: %s", aux.__class__.__name__)
                 aux.stop()
+                if isinstance(aux, Thread):
+                    aux.join(timeout=10)
+                    if aux.is_alive():
+                        log.warning("Failed to join {aux} thread.")
             except (NotImplementedError, AttributeError):
                 continue
             except Exception as e:
@@ -983,6 +1015,17 @@ class CommandPipeHandler:
             log.info("Process with pid %s has terminated", pid)
             self.analyzer.process_list.remove_pid(pid)
 
+    def _handle_shell(self, data):
+        explorer_pid = get_explorer_pid()
+        if explorer_pid:
+            explorer = Process(options=self.analyzer.options, config=self.analyzer.config, pid=explorer_pid)
+            self.analyzer.CRITICAL_PROCESS_LIST.append(int(explorer_pid))
+            filepath = explorer.get_filepath()
+            explorer.inject(interest=filepath, nosleepskip=True)
+            self.analyzer.LASTINJECT_TIME = timeit.default_timer()
+            explorer.close()
+            KERNEL32.Sleep(2000)
+
     def _handle_interop(self, data):
         if not self.analyzer.MONITORED_DCOM:
             self.analyzer.MONITORED_DCOM = True
@@ -1241,6 +1284,8 @@ class CommandPipeHandler:
                         interest = filepath
                     else:
                         interest = self.analyzer.config.target
+                    if filepath.lower() in self.analyzer.files.files:
+                        self.analyzer.files.delete_file(filepath, process_id)
                     is_64bit = proc.is_64bit()
                     filename = os.path.basename(filepath)
                     if self.analyzer.SERVICES_PID and process_id == self.analyzer.SERVICES_PID:
@@ -1443,7 +1488,10 @@ if __name__ == "__main__":
             complete_excp = traceback.format_exc()
             data["status"] = "exception"
             if "description" in data:
-                data["description"] += f"{data['description']}\n{complete_excp}"
+                if isinstance(data["description"], str):
+                    data["description"] = f"{data['description']}\n{complete_excp}"
+                else:
+                    data["description"] = f"{str(data['description'])}\n{complete_excp}"
             else:
                 data["description"] = complete_excp
         try:

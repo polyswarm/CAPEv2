@@ -10,7 +10,6 @@ import os
 import sys
 import tempfile
 import zipfile
-import zlib
 from contextlib import suppress
 from io import BytesIO
 from pathlib import Path
@@ -569,14 +568,14 @@ def load_files(request, task_id, category):
     @param task_id: cuckoo task id
     """
     is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
-    if is_ajax and category in ("CAPE", "dropped", "behavior", "debugger", "network", "procdump", "procmemory", "memory"):
+    if is_ajax and category in ("CAPE", "dropped", "behavior", "strace", "debugger", "network", "procdump", "procmemory", "memory"):
         data = {}
         debugger_logs = {}
         bingraph_dict_content = {}
         vba2graph_dict_content = {}
         # Search calls related to your PID.
         if enabledconf["mongodb"]:
-            if category in ("behavior", "debugger"):
+            if category in ("behavior", "debugger", "strace"):
                 data = mongo_find_one(
                     "analysis",
                     {"info.id": int(task_id)},
@@ -584,6 +583,8 @@ def load_files(request, task_id, category):
                 )
                 if category == "debugger":
                     data["debugger"] = data["behavior"]
+                if category == "strace":
+                    data["strace"] = data["behavior"]
             elif category == "network":
                 data = mongo_find_one(
                     "analysis", {"info.id": int(task_id)}, {category: 1, "info.tlp": 1, "cif": 1, "suricata": 1, "_id": 0}
@@ -600,6 +601,8 @@ def load_files(request, task_id, category):
 
                 if category == "debugger":
                     data["debugger"] = data["behavior"]
+                if category == "strace":
+                    data["strace"] = data["behavior"]
             elif category == "network":
                 data = elastic_handler.search(
                     index=get_analysis_index(),
@@ -767,7 +770,7 @@ def chunk(request, task_id, pid, pagenum):
             record = mongo_find_one(
                 "analysis",
                 {"info.id": int(task_id), "behavior.processes.process_id": pid},
-                {"behavior.processes.process_id": 1, "behavior.processes.calls": 1, "_id": 0},
+                {"info.machine.platform": 1, "behavior.processes.process_id": 1, "behavior.processes.calls": 1, "_id": 0},
             )
 
         if es_as_db:
@@ -778,7 +781,7 @@ def chunk(request, task_id, pid, pagenum):
                         "bool": {"must": [{"match": {"behavior.processes.process_id": pid}}, {"match": {"info.id": task_id}}]}
                     }
                 },
-                _source=["behavior.processes.process_id", "behavior.processes.calls"],
+                _source=["info.machine.platform", "behavior.processes.process_id", "behavior.processes.calls"],
             )["hits"]["hits"][0]["_source"]
 
         if not record:
@@ -805,7 +808,10 @@ def chunk(request, task_id, pid, pagenum):
         else:
             chunk = dict(calls=[])
 
-        return render(request, "analysis/behavior/_chunk.html", {"chunk": chunk})
+        if record["info"]["machine"].get("platform", "") == "linux":
+            return render(request, "analysis/strace/_chunk.html", {"chunk": chunk})
+        else:
+            return render(request, "analysis/behavior/_chunk.html", {"chunk": chunk})
     else:
         raise PermissionDenied
 
@@ -826,7 +832,7 @@ def filtered_chunk(request, task_id, pid, category, apilist, caller, tid):
             record = mongo_find_one(
                 "analysis",
                 {"info.id": int(task_id), "behavior.processes.process_id": int(pid)},
-                {"behavior.processes.process_id": 1, "behavior.processes.calls": 1, "_id": 0},
+                {"info.machine.platform": 1, "behavior.processes.process_id": 1, "behavior.processes.calls": 1, "_id": 0},
             )
         if es_as_db:
             record = es.search(
@@ -836,7 +842,7 @@ def filtered_chunk(request, task_id, pid, category, apilist, caller, tid):
                         "bool": {"must": [{"match": {"behavior.processes.process_id": pid}}, {"match": {"info.id": task_id}}]}
                     }
                 },
-                _source=["behavior.processes.process_id", "behavior.processes.calls"],
+                _source=["info.machine.platform", "behavior.processes.process_id", "behavior.processes.calls"],
             )["hits"]["hits"][0]["_source"]
 
         if not record:
@@ -888,7 +894,10 @@ def filtered_chunk(request, task_id, pid, category, apilist, caller, tid):
                     else:
                         filtered_process["calls"].append(call)
 
-        return render(request, "analysis/behavior/_chunk.html", {"chunk": filtered_process})
+        if record["info"]["machine"]["platform"] == "linux":
+            return render(request, "analysis/strace/_chunk.html", {"chunk": filtered_process})
+        else:
+            return render(request, "analysis/behavior/_chunk.html", {"chunk": filtered_process})
     else:
         raise PermissionDenied
 
@@ -1391,14 +1400,6 @@ def report(request, task_id):
 
     if isinstance(report.get("CAPE"), dict) and report.get("CAPE", {}).get("configs", {}):
         report["malware_conf"] = report["CAPE"]["configs"]
-    if enabledconf["compressresults"]:
-        for keyword in ("CAPE", "procdump", "enhanced", "summary"):
-            if report.get(keyword, False):
-                with suppress(Exception):
-                    report[keyword] = json.loads(zlib.decompress(report[keyword]))
-        if report.get("behavior", {}).get("summary", {}):
-            with suppress(Exception):
-                report["behavior"]["summary"] = json.loads(zlib.decompress(report["behavior"]["summary"]))
     report["CAPE"] = 0
     report["dropped"] = 0
     report["procdump"] = 0
@@ -1482,7 +1483,7 @@ def report(request, task_id):
     vba2graph = False
     vba2graph_dict_content = {}
     # we don't want to do this for urls but we might as well check that the target exists
-    if report.get("target", {}).get("file", {}):
+    if report.get("target", {}).get("file", {}).get("sha256"):
         vba2graph = processing_cfg.vba2graph.enabled
         vba2graph_svg_path = os.path.join(
             CUCKOO_ROOT, "storage", "analyses", str(task_id), "vba2graph", "svg", report["target"]["file"]["sha256"] + ".svg"

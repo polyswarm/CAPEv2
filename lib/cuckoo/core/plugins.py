@@ -26,6 +26,7 @@ from lib.cuckoo.common.exceptions import (
 )
 from lib.cuckoo.common.mapTTPs import mapTTP
 from lib.cuckoo.common.path_utils import path_exists
+from lib.cuckoo.common.scoring import calc_scoring
 from lib.cuckoo.common.utils import add_family_detection
 from lib.cuckoo.core.database import Database
 
@@ -63,7 +64,7 @@ def import_package(package):
             continue
 
         # Disable initialization of disabled plugins, performance++
-        _, category, module_name = name.split(".")
+        _, category, *_, module_name = name.split(".")
         if (
             category in config_mapper
             and module_name in config_mapper[category].fullconfig
@@ -321,6 +322,7 @@ class RunSignatures:
         self.task = task
         self.results = results
         self.ttps = []
+        self.mbcs = {}
         self.cfg_processing = processing_cfg
         self.analysis_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(task["id"]))
 
@@ -373,6 +375,12 @@ class RunSignatures:
                 self.call_for_cat[cat].add(sig)
             for proc in sig.filter_processnames:
                 self.call_for_processname[proc].add(sig)
+            if not sig.filter_apinames:
+                self.call_for_api["any"].add(sig)
+            if not sig.filter_categories:
+                self.call_for_cat["any"].add(sig)
+            if not sig.filter_processnames:
+                self.call_for_processname["any"].add(sig)
 
     def _should_load_signature(self, signature):
         """Should the given signature be enabled for this analysis?"""
@@ -380,6 +388,9 @@ class RunSignatures:
             return False
 
         if not self._check_signature_version(signature):
+            return False
+
+        if not self._check_signature_platform(signature):
             return False
 
         return True
@@ -445,6 +456,21 @@ class RunSignatures:
                 return None
 
         return True
+
+    def _check_signature_platform(self, signature):
+        module = inspect.getmodule(signature).__name__
+        platform = self.task.get("platform", "")
+
+        if platform in module:
+            return True
+
+        if "all" in module:
+            return True
+
+        if "custom" in module:
+            return True
+
+        return False
 
     def process(self, signature):
         """Run a signature.
@@ -515,22 +541,24 @@ class RunSignatures:
                     log.debug("\t |-- %s", sig.name)
 
             # Iterate calls and tell interested signatures about them.
+            evented_set = set(self.evented_list)
             for proc in self.results["behavior"]["processes"]:
                 process_name = proc["process_name"]
                 process_id = proc["process_id"]
                 calls = proc.get("calls", [])
+                sigs = evented_set.intersection(
+                    self.call_for_processname.get("any", set()).union(self.call_for_processname.get(process_name, set()))
+                )
+
                 for idx, call in enumerate(calls):
                     api = call.get("api")
-                    sigs = self.api_sigs.get(api)
-                    if sigs is None:
-                        # Build interested signatures
-                        cat = call.get("category")
-                        sigs = self.call_always.union(
-                            self.call_for_api.get(api, set()),
-                            self.call_for_cat.get(cat, set()),
-                            self.call_for_processname.get(process_name, set()),
-                        )
-                    for sig in sigs:
+                    # Build interested signatures
+                    cat = call.get("category")
+                    call_sigs = sigs.intersection(self.call_for_api.get(api, set()).union(self.call_for_api.get("any", set())))
+                    call_sigs = call_sigs.intersection(self.call_for_cat.get(cat, set()).union(self.call_for_cat.get("any", set())))
+                    call_sigs.update(evented_set.intersection(self.call_always))
+
+                    for sig in call_sigs:
                         # Setting signature attributes per call
                         sig.cid = idx
                         sig.call = call
@@ -577,6 +605,8 @@ class RunSignatures:
                                 for ttp in sig.ttps
                                 if {"ttp": ttp, "signature": sig.name} not in self.ttps
                             ]
+                        if hasattr(sig, "mbcs"):
+                            self.mbcs[sig.name] = sig.mbcs
 
         # Link this into the results already at this point, so non-evented signatures can use it
         self.results["signatures"] = matched
@@ -608,6 +638,8 @@ class RunSignatures:
                                 for ttp in signature.ttps
                                 if {"ttp": ttp, "signature": signature.name} not in self.ttps
                             ]
+                        if hasattr(signature, "mbcs"):
+                            self.mbcs[signature.name] = signature.mbcs
                         signature.matched = True
 
         for signature in self.signatures:
@@ -620,20 +652,11 @@ class RunSignatures:
         # Sort the matched signatures by their severity level.
         matched.sort(key=lambda key: key["severity"])
 
-        # Tweak later as needed
-        malscore = 0.0
-        for match in matched:
-            if match["severity"] == 1:
-                malscore += match["weight"] * 0.5 * (match["confidence"] / 100.0)
-            else:
-                malscore += match["weight"] * (match["severity"] - 1) * (match["confidence"] / 100.0)
-        if malscore > 10.0:
-            malscore = 10.0
-        if malscore < 0.0:
-            malscore = 0.0
+        malscore, malstatus = calc_scoring(self.results, matched)
 
         self.results["malscore"] = malscore
-        self.results["ttps"] = mapTTP(self.ttps)
+        self.results["ttps"] = mapTTP(self.ttps, self.mbcs)
+        self.results["malstatus"] = malstatus
 
         # Make a best effort detection of malware family name (can be updated later by re-processing the analysis)
         if (
