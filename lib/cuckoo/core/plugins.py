@@ -628,6 +628,7 @@ class RunSignatures:
                 if (
                     not signature.filter_analysistypes
                     or self.results.get("target", {}).get("category") in signature.filter_analysistypes
+                    or sig.name == "network_questionable_host"
                 ):
                     match = self.process(signature)
                     # If the signature is matched, add it to the list.
