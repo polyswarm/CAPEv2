@@ -425,35 +425,35 @@ class RunSignatures:
         version = CUCKOO_VERSION.split("-", 1)[0]
         sandbox_version = Version(version)
 
-        # If provided, check the minimum working Cuckoo version for this signature.
-        if current.minimum:
-            try:
-                # If the running Cuckoo is older than the required minimum version, skip this signature.
-                if sandbox_version < Version(current.minimum.split("-", 1)[0]):
-                    log.debug(
-                        'You are running an older incompatible version of Cuckoo, the signature "%s" requires minimum version %s',
-                        current.name,
-                        current.minimum,
-                    )
-                    return None
-            except ValueError:
-                log.debug("Wrong minor version number in signature %s", current.name)
-                return None
-
-        # If provided, check the maximum working Cuckoo version for this  signature.
-        if current.maximum:
-            try:
-                # If the running Cuckoo is newer than the required maximum version, skip this signature.
-                if sandbox_version > Version(current.maximum.split("-", 1)[0]):
-                    log.debug(
-                        'You are running a newer incompatible version of Cuckoo, the signature "%s" requires maximum version %s',
-                        current.name,
-                        current.maximum,
-                    )
-                    return None
-            except ValueError:
-                log.debug("Wrong major version number in signature %s", current.name)
-                return None
+        # # If provided, check the minimum working Cuckoo version for this signature.
+        # if current.minimum:
+        #     try:
+        #         # If the running Cuckoo is older than the required minimum version, skip this signature.
+        #         if sandbox_version < Version(current.minimum.split("-", 1)[0]):
+        #             log.debug(
+        #                 'You are running an older incompatible version of Cuckoo, the signature "%s" requires minimum version %s',
+        #                 current.name,
+        #                 current.minimum,
+        #             )
+        #             return None
+        #     except ValueError:
+        #         log.debug("Wrong minor version number in signature %s", current.name)
+        #         return None
+        #
+        # # If provided, check the maximum working Cuckoo version for this  signature.
+        # if current.maximum:
+        #     try:
+        #         # If the running Cuckoo is newer than the required maximum version, skip this signature.
+        #         if sandbox_version > Version(current.maximum.split("-", 1)[0]):
+        #             log.debug(
+        #                 'You are running a newer incompatible version of Cuckoo, the signature "%s" requires maximum version %s',
+        #                 current.name,
+        #                 current.maximum,
+        #             )
+        #             return None
+        #     except ValueError:
+        #         log.debug("Wrong major version number in signature %s", current.name)
+        #         return None
 
         return True
 
