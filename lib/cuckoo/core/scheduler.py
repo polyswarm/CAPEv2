@@ -1060,6 +1060,8 @@ class Scheduler:
                     if self.categories_need_VM:
                         # First things first, are there pending tasks?
                         if not self.db.count_tasks(status=TASK_PENDING):
+                            # if there are no tasks, wait for a while before looping to avoid pegging the cpu
+                            time.sleep(1)
                             continue
                         # There are? Great, let's get them, ordered by priority and then oldest to newest
                         tasks_with_relevant_machine_available = []
