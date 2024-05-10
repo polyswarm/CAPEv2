@@ -898,10 +898,10 @@ function dependencies() {
 
     install_postgresql
 
-    sudo -u postgres -H sh -c "psql -c \"CREATE USER ${USER} WITH PASSWORD '$PASSWD'\"" || true
-    sudo -u postgres -H sh -c "psql -c \"CREATE DATABASE ${USER}\""  || true
-    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"GRANT ALL PRIVILEGES ON DATABASE ${USER} to ${USER};\""  || true
-    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE ${USER} OWNER TO ${USER};\""  || true
+#    sudo -u postgres -H sh -c "psql -c \"CREATE USER ${USER} WITH PASSWORD '$PASSWD'\"";
+#    sudo -u postgres -H sh -c "psql -c \"CREATE DATABASE ${USER}\"";
+#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"GRANT ALL PRIVILEGES ON DATABASE ${USER} to ${USER};\""
+#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE ${USER} OWNER TO ${USER};\""
 
     apt-get install apparmor-utils -y
     TCPDUMP_PATH=`which tcpdump`
@@ -1229,8 +1229,8 @@ function install_node_exporter() {
 
 function install_volatility3() {
     sudo apt-get install unzip
-    sudo -u ${USER} poetry run pip3 install git+https://github.com/volatilityfoundation/volatility3
-    vol_path=$(sudo -u ${USER} poetry run python3 -c "import volatility3.plugins;print(volatility3.__file__.replace('__init__.py', 'symbols/'))")
+    sudo pip3 install git+https://github.com/volatilityfoundation/volatility3
+    vol_path=$(sudo python3 -c "import volatility3.plugins;print(volatility3.__file__.replace('__init__.py', 'symbols/'))")
     cd $vol_path || return
     wget https://downloads.volatilityfoundation.org/volatility3/symbols/windows.zip -O windows.zip
     unzip windows.zip
