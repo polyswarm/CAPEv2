@@ -122,7 +122,7 @@ if repconf.elasticsearchdb.enabled:
 
     es = elastic_handler
 
-SCHEMA_VERSION = "3a1c6c03844b"
+SCHEMA_VERSION = "c2bd0eb5e69d"
 TASK_BANNED = "banned"
 TASK_PENDING = "pending"
 TASK_RUNNING = "running"
@@ -904,6 +904,8 @@ class Database(object, metaclass=Singleton):
             # There are? Awesome!
             if set_status:
                 self.set_status(task_id=task.id, status=TASK_RUNNING)
+                assigned = vms[0]  # Take the first vm which could be assigned
+                self.set_machine_status(assigned.label, MACHINE_SCHEDULED)
             return True
         return False
 

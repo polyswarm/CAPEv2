@@ -13,6 +13,7 @@ import time
 from collections import defaultdict
 from time import monotonic as _time
 
+from lib.cuckoo.common.cleaners_utils import free_space_monitor
 from lib.cuckoo.common.config import Config
 from lib.cuckoo.common.constants import CUCKOO_ROOT
 from lib.cuckoo.common.exceptions import (
@@ -25,7 +26,7 @@ from lib.cuckoo.common.exceptions import (
 from lib.cuckoo.common.integrations.parse_pe import PortableExecutable
 from lib.cuckoo.common.objects import File
 from lib.cuckoo.common.path_utils import path_delete, path_exists, path_mkdir
-from lib.cuckoo.common.utils import convert_to_printable, create_folder, free_space_monitor, get_memdump_path, load_categories
+from lib.cuckoo.common.utils import convert_to_printable, create_folder, get_memdump_path, load_categories
 from lib.cuckoo.core.database import TASK_COMPLETED, TASK_FAILED_ANALYSIS, TASK_PENDING, Database, Task
 from lib.cuckoo.core.guest import GuestManager
 from lib.cuckoo.core.log import task_log_stop
@@ -358,6 +359,7 @@ class AnalysisManager(threading.Thread):
                     tags=task_tags,
                     arch=task_archs,
                     os_version=os_version,
+                    need_scheduled=True,
                 )
 
             # If no machine is available at this moment, wait for one second and try again.
@@ -423,7 +425,8 @@ class AnalysisManager(threading.Thread):
     def category_checks(self):
         if self.task.category in ("file", "pcap", "static"):
             sha256 = File(self.task.target).get_sha256()
-            # Check whether the file has been changed for some unknown reason.
+            # Check whethe
+            # r the file has been changed for some unknown reason.
             # And fail this analysis if it has been modified.
             if not self.check_file(sha256):
                 log.debug("check file")
@@ -1033,13 +1036,7 @@ class Scheduler:
                 # Resolve the full base path to the analysis folder, just in
                 # case somebody decides to make a symbolic link out of it.
                 dir_path = os.path.join(CUCKOO_ROOT, "storage", "analyses")
-                need_space, space_available = free_space_monitor(dir_path, return_value=True, analysis=True)
-                if need_space:
-                    log.error(
-                        "Not enough free disk space! (Only %d MB!). You can change limits it in cuckoo.conf -> freespace",
-                        space_available,
-                    )
-                    continue
+                free_space_monitor(dir_path, analysis=True)
 
             # Have we limited the number of concurrently executing machines?
             if self.cfg.cuckoo.max_machines_count > 0 and self.categories_need_VM:
@@ -1119,6 +1116,13 @@ class Scheduler:
                         for task in self.db.list_tasks(
                             status=TASK_PENDING, order_by=(Task.priority.desc(), Task.added_on), options_not_like="node="
                         ):
+
+                            # ToDo write a proper fix/place
+                            if task.category in ("pcap", "static"):
+                                # Dirty hack
+                                relevant_machine_is_available = True
+                                break
+
                             # Can this task ever be serviced?
                             if not self.db.is_serviceable(task):
                                 if self.cfg.cuckoo.fail_unserviceable:

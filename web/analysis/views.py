@@ -7,6 +7,7 @@ import collections
 import datetime
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import zipfile
@@ -116,6 +117,10 @@ HAVE_FLOSS = False
 if processing_cfg.floss.on_demand:
     from lib.cuckoo.common.integrations.floss import HAVE_FLOSS, Floss
 
+USE_SEVENZIP = False
+if reporting_cfg.compression.compressiontool == "7zip":
+    USE_SEVENZIP = True
+    SEVENZIP_PATH = reporting_cfg.compression.sevenzippath.strip() or "/usr/bin/7z"
 
 # Used for displaying enabled config options in Django UI
 enabledconf = {}
@@ -883,7 +888,7 @@ def filtered_chunk(request, task_id, pid, category, apilist, caller, tid):
                     if len(apis) > 0:
                         add_call = -1
                         for api in apis:
-                            if call["api"].lower() == api:
+                            if api in call["api"].lower():
                                 if exclude:
                                     add_call = 0
                                 else:
@@ -1646,6 +1651,7 @@ zip_categories = (
     "procdumpzipall",
     "CAPEzipall",
     "capeyarazipall",
+    "logszipall",
 )
 category_map = {
     "CAPE": "CAPE",
@@ -1784,6 +1790,9 @@ def file(request, category, task_id, dlfile):
         path = os.path.join(CUCKOO_ROOT, "storage", "analyses", task_id, "rtf_objects", file_name)
     elif category == "tlskeys":
         path = os.path.join(CUCKOO_ROOT, "storage", "analyses", task_id, "tlsdump", "tlsdump.log")
+    # linux sysmon url to download sysmon.data xml
+    elif category == "sysmon":
+        path = os.path.join(CUCKOO_ROOT, "storage", "analyses", task_id, "sysmon", "sysmon.data")
     elif category == "evtx":
         path = os.path.join(CUCKOO_ROOT, "storage", "analyses", task_id, "evtx", "evtx.zip")
         file_name = f"{task_id}_evtx.zip"
@@ -1792,6 +1801,11 @@ def file(request, category, task_id, dlfile):
         # search in mongo and get the path
         if enabledconf["mongodb"] and web_cfg.zipped_download.download_all:
             path = _file_search_all_files(category.replace("zipall", ""), dlfile)
+    elif category == "logszipall":
+        buf = os.path.join(CUCKOO_ROOT, "storage", "analyses", task_id, "logs")
+        path = []
+        for dfile in os.listdir(buf):
+            path.append(os.path.join(buf, dfile))
     else:
         return render(request, "error.html", {"error": "Category not defined"})
 
@@ -1818,20 +1832,36 @@ def file(request, category, task_id, dlfile):
 
     try:
         if category in zip_categories:
-            mem_zip = BytesIO()
-            with pyzipper.AESZipFile(mem_zip, "w", compression=pyzipper.ZIP_LZMA, encryption=pyzipper.WZ_AES) as zf:
-                zf.setpassword(settings.ZIP_PWD)
-                if not isinstance(path, list):
-                    path = [path]
-                for file in path:
-                    with open(file, "rb") as f:
-                        zf.writestr(os.path.basename(file), f.read())
-            mem_zip.seek(0)
-            resp = StreamingHttpResponse(mem_zip, content_type=cd)
-            resp["Content-Length"] = len(mem_zip.getvalue())
-            file_name += ".zip"
-            path = os.path.join(tempfile.gettempdir(), file_name)
-            cd = "application/zip"
+            if not isinstance(path, list):
+                path = [path]
+            if USE_SEVENZIP:
+                zip_path = os.path.join(CUCKOO_ROOT, "storage", "analysis", f"{task_id}", f"{file_name}.zip")
+                sevenZipArgs = [SEVENZIP_PATH, f"-p{settings.ZIP_PWD}", "a", zip_path]
+                sevenZipArgs.extend(path)
+                try:
+                    subprocess.check_call(sevenZipArgs)
+                except subprocess.CalledProcessError:
+                    return render(request, "error.html", {"error": "error compressing file"})
+                zip_fd = open(zip_path, "rb")
+                resp = StreamingHttpResponse(zip_fd, content_type="application/zip")
+                resp["Content-Length"] = os.path.getsize(zip_path)
+                resp["Content-Disposition"] = f"attachment; filename={file_name}.zip"
+                return resp
+            else:
+                mem_zip = BytesIO()
+                with pyzipper.AESZipFile(mem_zip, "w", compression=pyzipper.ZIP_LZMA, encryption=pyzipper.WZ_AES) as zf:
+                    zf.setpassword(settings.ZIP_PWD)
+                    if not isinstance(path, list):
+                        path = [path]
+                    for file in path:
+                        with open(file, "rb") as f:
+                            zf.writestr(os.path.basename(file), f.read())
+                mem_zip.seek(0)
+                resp = StreamingHttpResponse(mem_zip, content_type=cd)
+                resp["Content-Length"] = len(mem_zip.getvalue())
+                file_name += ".zip"
+                path = os.path.join(tempfile.gettempdir(), file_name)
+                cd = "application/zip"
         else:
             resp = StreamingHttpResponse(FileWrapper(open(path, "rb"), 8091), content_type=cd)
             resp["Content-Length"] = Path(path).stat().st_size
