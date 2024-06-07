@@ -896,6 +896,8 @@ function dependencies() {
     pip3 install cython
     pip3 install git+https://github.com/andreasvc/pyre2.git
 
+    pip3 install cybox
+
     install_postgresql
 
 #    sudo -u postgres -H sh -c "psql -c \"CREATE USER ${USER} WITH PASSWORD '$PASSWD'\"";
