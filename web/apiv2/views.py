@@ -53,7 +53,7 @@ from lib.cuckoo.common.web_utils import (
     statistics,
     validate_task,
 )
-from lib.cuckoo.core.database import TASK_COMPLETED, TASK_RECOVERED, TASK_RUNNING, Database, Task
+from lib.cuckoo.core.database import TASK_RECOVERED, TASK_RUNNING, Database, Task, _Database
 from lib.cuckoo.core.rooter import _load_socks5_operational, vpns
 
 try:
@@ -106,7 +106,7 @@ if repconf.elasticsearchdb.enabled and not repconf.elasticsearchdb.searchonly:
     es_as_db = True
     es = elastic_handler
 
-db = Database()
+db: _Database = Database()
 
 
 # Conditional decorator for web authentication
@@ -1026,7 +1026,6 @@ def tasks_reprocess(request, task_id):
     if error:
         return Response({"error": True, "error_value": msg})
 
-    db.set_status(task_id, TASK_COMPLETED)
     return Response({"error": error, "data": f"Task ID {task_id} with status {task_status} marked for reprocessing"})
 
 
@@ -1098,7 +1097,7 @@ def tasks_status(request, task_id):
         status = task.to_dict()["status"]
         resp = {"error": False, "data": status}
     elif request.method == "POST" and apiconf.user_stop.enabled and request.data.get("status", "") == "finish":
-        machine = db.view_machine(task.machine)
+        machine = db.view_machine(task.guest.name)
         # Todo probably add task status if pending
         if machine.status == "running":
             try:
@@ -1797,7 +1796,7 @@ def tasks_procmemory(request, task_id, pid="all"):
         return Response(resp)
 
     parent_folder = os.path.dirname(srcdir)
-    analysis_dir = os.path.join(CUCKOO_ROOT, "storage", "analysis", f"{task_id}")
+    analysis_dir = os.path.join(CUCKOO_ROOT, "storage", "analyses", f"{task_id}")
     if pid == "all":
         if not apiconf.taskprocmemory.get("all"):
             resp = {"error": True, "error_value": "Downloading of all process memory dumps is disabled"}
@@ -1805,7 +1804,7 @@ def tasks_procmemory(request, task_id, pid="all"):
         if USE_SEVENZIP:
             zip_path = os.path.join(analysis_dir, "procdumps.zip")
             try:
-                subprocess.check_call(["/usr/bin/7z", f"-p{settings.ZIP_PWD}", "a", zip_path, srcdir])
+                subprocess.check_call(["/usr/bin/7z", f"-p{settings.ZIP_PWD.decode()}", "a", zip_path, srcdir])
             except subprocess.CalledProcessError:
                 resp = {"error": True, "error_value": "error compressing file"}
                 return Response(resp)
@@ -1828,7 +1827,7 @@ def tasks_procmemory(request, task_id, pid="all"):
             if USE_SEVENZIP:
                 zip_path = os.path.join(analysis_dir, f"{task_id}-{pid}_dmp.zip")
                 try:
-                    subprocess.check_call([SEVENZIP_PATH, f"-p{settings.ZIP_PWD}", "a", zip_path, filepath])
+                    subprocess.check_call([SEVENZIP_PATH, f"-p{settings.ZIP_PWD.decode()}", "a", zip_path, filepath])
                 except subprocess.CalledProcessError:
                     resp = {"error": True, "error_value": "error compressing file"}
                     return Response(resp)
@@ -1928,7 +1927,7 @@ def file(request, stype, value):
 
             if USE_SEVENZIP:
                 try:
-                    subprocess.check_call([SEVENZIP_PATH, f"-p{settings.ZIP_PWD}", "a", zip_path, sample])
+                    subprocess.check_call([SEVENZIP_PATH, f"-p{settings.ZIP_PWD.decode()}", "a", zip_path, sample])
                 except subprocess.CalledProcessError:
                     resp = {"error": True, "error_value": "error compressing file"}
                     return Response(resp)

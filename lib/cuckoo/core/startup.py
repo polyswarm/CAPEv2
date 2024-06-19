@@ -152,17 +152,6 @@ def create_structure():
         )
 
 
-class DatabaseHandler(logging.Handler):
-    """Logging to database handler.
-    Used to log errors related to tasks in database.
-    """
-
-    def emit(self, record):
-        if hasattr(record, "task_id"):
-            db = Database()
-            db.add_error(record.msg, int(record.task_id))
-
-
 class ConsoleHandler(logging.StreamHandler):
     """Logging to console handler."""
 
@@ -187,7 +176,7 @@ class ConsoleHandler(logging.StreamHandler):
 
 
 def check_linux_dist():
-    ubuntu_versions = ("20.04", "22.04")
+    ubuntu_versions = ("20.04", "22.04", "24.04")
     with suppress(AttributeError):
         platform_details = platform.dist()
         if platform_details[0] != "Ubuntu" and platform_details[1] not in ubuntu_versions:

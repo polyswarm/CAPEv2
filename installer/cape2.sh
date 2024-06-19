@@ -705,13 +705,23 @@ function install_suricata() {
     chown ${USER}:${USER} -R /var/log/suricata
 }
 
+function insall_yara_x() {
+    curl https://sh.rustup.rs -sSf | sh
+    cd /tmp || return
+    git clone https://github.com/VirusTotal/yara-x
+    cd yara-x || return
+    source "$HOME/.cargo/env"
+    cargo install --path cli
+    pip3 install yara-x
+}
+
 function install_yara() {
     echo '[+] Checking for old YARA version to uninstall'
     dpkg -l|grep "yara-v[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all || true 2>/dev/null
 
     echo '[+] Installing Yara'
 
-    apt-get install libtool libjansson-dev libmagic1 libmagic-dev jq autoconf -y
+    apt-get install libtool libjansson-dev libmagic1 libmagic-dev jq autoconf libyara-dev -y
 
     cd /tmp || return
     yara_info=$(curl -s https://api.github.com/repos/VirusTotal/yara/releases/latest)
@@ -890,11 +900,11 @@ function dependencies() {
     git submodule update --init rules
     pip3 install --ignore-installed .
 
-    # re2
-    apt-get install libre2-dev -y
+    # re2 - dead on py3.11
+    # apt-get install libre2-dev -y
     #re2 for py3
-    pip3 install cython
-    pip3 install git+https://github.com/andreasvc/pyre2.git
+    # pip3 install cython
+    # pip3 install git+https://github.com/andreasvc/pyre2.git
 
     install_postgresql
 
@@ -1250,7 +1260,7 @@ function install_guacamole() {
 
 
     if [ ! -d "/tmp/guac-build" ] ; then
-       mkdir /tmp/guac-build
+        mkdir /tmp/guac-build
     fi
     cd /tmp/guac-build || return
 
