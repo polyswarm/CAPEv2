@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -ex
 # run this via...
 # cd /opt/CAPEv2/ ; sudo -u cape poetry run extra/yara_installer.sh
 
@@ -8,6 +8,7 @@ if [ ! -d /tmp/yara-python ]; then
 fi
 
 cd /tmp/yara-python
+git checkout ${YARA_PYTHON_GITHUB_SHA}
 python setup.py build --enable-cuckoo --enable-magic --enable-profiling
 cd ..
 # for root
