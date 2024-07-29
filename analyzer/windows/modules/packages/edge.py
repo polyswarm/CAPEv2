@@ -10,7 +10,7 @@ class Edge(Package):
     ]
 
     def start(self, url):
-        edge = self.get_path("msedge.exe")
+        edge = self.get_path_glob("msedge.exe")
         args = [
             "--disable-features=RendererCodeIntegrity",
             "--disable-extensions",
