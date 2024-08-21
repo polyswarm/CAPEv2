@@ -1,3 +1,30 @@
+### [16.08.2024]
+* TTD integration (Microsoft Time Travel Debugging)
+    * Use submission option ttd=1
+    * Place TTD binaries in analyzer/windows/bin (with wow64 subdirectory for 32-bit)
+    * .trc files output to TTD directory in results folder for manual retrieval
+* Monitor update: Small debugger fix
+
+### [07.08.2024]
+* Monitor update: Set language via lang=X (language code) submission option
+
+### [05.08.2024]
+* SparkRAT config parser - thanks t-mtsmt
+
+### [22.07.2024]
+* Monitor update: Enhancements to software (& syscall) breakpoint mechanism, add handling for Internet Shortcut CLSID (.url)
+
+### [11.07.2024]
+* Monitor updates:
+    * (in)direct syscall handling enhancements
+    * unpacking & scanning: improved entropy checks
+
+### [26.06.2024]
+* Monitor updates: debugger/trace enhancements
+
+### [21.06.2024]
+* Monitor updates: misc enhancements & fixes (see capemon repo for details)
+
 ### [12.06.2024]
 * Monitor update: Unpacker enhancement: capture modified mapped images
 
