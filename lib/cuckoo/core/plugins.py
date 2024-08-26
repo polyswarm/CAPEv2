@@ -339,6 +339,8 @@ class RunSignatures:
             if self._should_load_signature(signature):
                 # Initialize them all
                 self.signatures.append(signature(self.results))
+            else:
+                log.debug('Not loading signature: %s', signature.name)
 
         overlay = self._load_overlay()
         log.debug("Applying signature overlays for signatures: %s", ", ".join(overlay))
