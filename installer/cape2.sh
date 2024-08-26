@@ -1187,8 +1187,7 @@ function install_CAPE() {
       crudini --set conf/reporting.conf runstatistics enabled yes
     fi
 
-    # pin the signatures to a specific hash with our fixes, until they are merged upstream
-    python3 utils/community.py -waf -cr --url "https://github.com/polyswarm/CAPESandbox-community/archive/7e530cc6d28c692528d236ba3efb73f62b3221e1.tar.gz"
+    python3 utils/community.py -waf -cr --url "https://github.com/polyswarm/CAPESandbox-community/archive/develop.tar.gz"
 
     # Configure direct internet connection
     sudo echo "400 ${INTERNET_IFACE}" >> /etc/iproute2/rt_tables
