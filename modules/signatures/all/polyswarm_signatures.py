@@ -26,9 +26,43 @@ except ImportError:
 
 import base64
 
+class CustomTestSignature(Signature):
+    name = "test_signature"
+    description = "testing"
+    severity = 3
+    confidence = 100
+    categories = ["credential_access", "evasion", "infostealer", "phishing", "static"]
+    authors = []
+    references = [
+        "https://securelist.com/phishing-kit-market-whats-inside-off-the-shelf-phishing-packages/106149/",
+        "https://socradar.io/what-is-a-phishing-kit/" "https://github.com/SteveD3/kit_hunter/tree/master/tag_files",
+    ]
+    enabled = True
+    minimum = "1.2"
+    ttps = ["T1111", "T1193", "T1140"]  # MITRE v6
+    ttps += ["T1566.001"]  # MITRE v6,7,8
+    ttps += ["T1606"]  # MITRE v7,8
+    mbcs = ["C0029.003"]  # micro-behaviour
+
+    def run(self):
+        has_match = False
+        packages = ["html", "edge", "chrome", "firefox"]
+
+        if self.results["info"]["package"] in packages:
+            data = self.results["target"]["file"]["data"]
+            r = r"somestring"
+            user = re.search(r, data)
+            if user:
+                has_match = True
+                self.weight = 3
+                self.families = ["HTMLPhisher_2023"]
+                self.description = "Phishing kit detected, extracted config from sample"
+                if user:
+                    self.data.append({"user": user.group(1)})
+        return has_match
 
 class HTMLPhisher_0(Signature):
-    name = "phishing_kit_detected"
+    name = "phishing_kit_detected_0"
     description = "Phishing Kit Detected, sample is trying to harvest credentials"
     severity = 3
     confidence = 100
@@ -79,7 +113,7 @@ class HTMLPhisher_0(Signature):
 
 
 class HTMLPhisher_1(Signature):
-    name = "phishing_kit_detected"
+    name = "phishing_kit_detected_1"
     description = "Phishing Kit Detected, sample is trying to harvest credentials"
     severity = 3
     confidence = 100
@@ -132,7 +166,7 @@ class HTMLPhisher_1(Signature):
 
 
 class HTMLPhisher_2(Signature):
-    name = "phishing_kit_detected"
+    name = "phishing_kit_detected_2"
     description = "Phishing Kit Detected, sample is trying to harvest credentials"
     severity = 3
     confidence = 100
