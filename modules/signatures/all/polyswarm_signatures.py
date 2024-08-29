@@ -53,7 +53,7 @@ class CustomTestSignature(Signature):
         #     except Exception as e:
         #         pass
         #     pass
-        self.data.append({'results': self.results})
+        self.data.append({'file': self.results.get("target", {}).get("file")})
         return True
         # has_match = False
         # packages = ["html", "edge", "chrome", "firefox"]
