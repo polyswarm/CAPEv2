@@ -45,21 +45,23 @@ class CustomTestSignature(Signature):
     mbcs = ["C0029.003"]  # micro-behaviour
 
     def run(self):
-        has_match = False
-        packages = ["html", "edge", "chrome", "firefox"]
-
-        if self.results["info"]["package"] in packages:
-            data = self.results["target"]["file"]["data"]
-            r = r"somestring"
-            user = re.search(r, data)
-            if user:
-                has_match = True
-                self.weight = 3
-                self.families = ["HTMLPhisher_2023"]
-                self.description = "Phishing kit detected, extracted config from sample"
-                if user:
-                    self.data.append({"user": user.group(1)})
-        return has_match
+        self.data.append({'strings': self.results["target"]["file"]["strings"], 'data': self.results["target"]["file"]["data"]})
+        return True
+        # has_match = False
+        # packages = ["html", "edge", "chrome", "firefox"]
+        #
+        # if self.results["info"]["package"] in packages:
+        #     data = self.results["target"]["file"]["data"]
+        #     r = r"somestring"
+        #     user = re.search(r, data)
+        #     if user:
+        #         has_match = True
+        #         self.weight = 3
+        #         self.families = ["HTMLPhisher_2023"]
+        #         self.description = "Phishing kit detected, extracted config from sample"
+        #         if user:
+        #             self.data.append({"user": user.group(1)})
+        # return has_match
 
 class HTMLPhisher_0(Signature):
     name = "phishing_kit_detected_0"
