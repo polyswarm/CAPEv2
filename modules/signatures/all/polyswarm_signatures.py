@@ -45,7 +45,7 @@ class CustomTestSignature(Signature):
     mbcs = ["C0029.003"]  # micro-behaviour
 
     def run(self):
-        self.data.append({'strings': self.results["target"]["file"]["strings"], 'data': self.results["target"]["file"]["data"]})
+        self.data.append({'file': self.results.get("target", {}).get("file")})
         return True
         # has_match = False
         # packages = ["html", "edge", "chrome", "firefox"]
