@@ -34,6 +34,8 @@ class Base64Obfuscation(Signature):
             js_regex = r"/\b(function|var|let|const|if|else|for|while|do|switch|case|default|try|catch|finally|return|new|this|typeof|delete|in|instanceof)\b/"
             regex_phishingkit_values = [
                 {'re': r"YOUR_BOT_TOKEN\s*=\s*\"([^&]+?)\"", 'name': 'Telegram Bot Token', 'group': 1},
+                {'re': r"YOUR_BOT_TOKEN\s*=\s*\'([^&]+?)\'", 'name': 'Telegram Bot Token', 'group': 1},
+                {'re': r"YOUR_CHANNEL_ID\s*=\s*\"([^&]+?)\"", 'name': 'Telegram Channel ID', 'group': 1},
                 {'re': r"YOUR_CHANNEL_ID\s*=\s*\'([^&]+?)\'", 'name': 'Telegram Channel ID', 'group': 1},
             ]
             for regex in regex_decoded:
