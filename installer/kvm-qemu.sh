@@ -1,5 +1,5 @@
 #!/bin/bash
-# set -ex
+set -ex
 
 # Copyright (C) 2011-2023 doomedraven.
 # See the file 'LICENSE.md' for copying permission.
@@ -56,10 +56,10 @@ QTARGETS="--target-list=i386-softmmu,x86_64-softmmu,i386-linux-user,x86_64-linux
 
 
 #https://www.qemu.org/download/#source or https://download.qemu.org/
-qemu_version=9.0.0
+qemu_version=9.1.1
 # libvirt - https://libvirt.org/sources/
 # changelog - https://libvirt.org/news.html
-libvirt_version=10.3.0
+libvirt_version=10.8.0
 # virt-manager - https://github.com/virt-manager/virt-manager/releases
 # autofilled
 OS=""
@@ -140,8 +140,7 @@ if [ -f "./kvm-config.sh" ]; then
 fi
 
 # ToDo check if aptitude is installed if no refresh and install
-sudo apt-get update 2>/dev/null
-sudo apt-get install aptitude -y 2>/dev/null
+sudo apt-get update -yqq
 
 NC='\033[0m'
 RED='\033[0;31m'
@@ -248,8 +247,8 @@ function _enable_tcp_bbr() {
 }
 
 function install_apparmor() {
-    aptitude install -f bison linux-generic-hwe-22.04 -y
-    aptitude install -f apparmor apparmor-profiles apparmor-profiles-extra apparmor-utils libapparmor-dev libapparmor1  python3-apparmor python3-libapparmor libapparmor-perl -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -f bison linux-generic-hwe-22.04 -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -f apparmor apparmor-profiles apparmor-profiles-extra apparmor-utils libapparmor-dev libapparmor1  python3-apparmor python3-libapparmor -y
 }
 
 
@@ -257,13 +256,15 @@ function install_libguestfs() {
     # https://libguestfs.org/guestfs-building.1.html
     cd /opt || return
     echo "[+] Check for previous version of LibGuestFS"
-    sudo dpkg --purge --force-all "libguestfs-*" 2>/dev/null
+    sudo dpkg --purge --force-all "libguestfs-*" 2>/dev/null || true
 
-    wget -O- https://packages.erlang-solutions.com/ubuntu/erlang_solutions.asc | sudo apt-key add -
-    sudo add-apt-repository -y "deb https://packages.erlang-solutions.com/ubuntu $(lsb_release -sc) contrib"
-    sudo aptitude install -f parted libyara3 erlang-dev gperf flex bison libaugeas-dev libhivex-dev supermin ocaml-nox libhivex-ocaml genisoimage libhivex-ocaml-dev libmagic-dev libjansson-dev gnulib jq ocaml-findlib -y 2>/dev/null
-    sudo apt-get update
-    sudo aptitude install -f erlang -y
+    curl -1sLf "https://github.com/rabbitmq/signing-keys/releases/download/2.0/rabbitmq-release-signing-key.asc" | sudo gpg --dearmor | sudo tee /usr/share/keyrings/com.github.rabbitmq.signing.gpg > /dev/null
+    curl -1sLf "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xf77f1eda57ebb1cc" | sudo gpg --dearmor | sudo tee /usr/share/keyrings/net.launchpad.ppa.rabbitmq.erlang.gpg > /dev/null
+    echo "deb [signed-by=/usr/share/keyrings/net.launchpad.ppa.rabbitmq.erlang.gpg] http://ppa.launchpad.net/rabbitmq/rabbitmq-erlang/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/erlang.list
+    echo "deb-src [signed-by=/usr/share/keyrings/net.launchpad.ppa.rabbitmq.erlang.gpg] http://ppa.launchpad.net/rabbitmq/rabbitmq-erlang/ubuntu $(lsb_release -sc) main" >> /etc/apt/sources.list.d/erlang.list
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq -f apt-transport-https parted libyara8 erlang-dev gperf flex bison libaugeas-dev libhivex-dev supermin ocaml-nox libhivex-ocaml genisoimage libhivex-ocaml-dev libmagic-dev libjansson-dev gnulib jq ocaml-findlib -y
+    sudo apt update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq -f erlang -y
 
     if [ ! -d libguestfs ]; then
         #ToDo move to latest release not latest code
@@ -272,25 +273,43 @@ function install_libguestfs() {
         #_repo_url=$(echo $_info | jq ".zipball_url" | sed "s/\"//g")
         #wget -q $_repo_url
         #unzip $_version
-        git clone --recursive https://github.com/libguestfs/libguestfs
+        DEBIAN_FRONTEND=noninteractive apt install -yq libzstd-dev
+        git clone --depth=1 --single-branch --recursive --no-recurse-submodules https://github.com/libguestfs/libguestfs
+        cd libguestfs
+        git fetch --depth=1 origin ${LIBGUESTFS_GITHUB_SHA}
+        git checkout ${LIBGUESTFS_GITHUB_SHA}
+        cd ..
+        git clone --depth=1 --single-branch --recursive --no-recurse-submodules git://git.annexia.org/ocaml-augeas.git
+        cd ocaml-augeas
+        autoreconf --install
+        ./configure
+        make
+        make install
+        cd ..
+        rm -rf ocaml-augeas
     fi
     cd libguestfs || return
     git submodule update --init
     autoreconf -i
     ./configure CFLAGS=-fPIC
-    make -j"$(nproc)"
+    make -j"$(getconf _NPROCESSORS_ONLN)"
 
     # Install virt tools that are in a diff repo since LIBGUESTFS 1.46 split
     # More Info: https://listman.redhat.com/archives/libguestfs/2021-September/msg00153.html
     cd /opt || return
     if [ ! -d guestfs-tools ]; then
       git clone --recursive https://github.com/rwmjones/guestfs-tools.git
+      cd guestfs-tools
+      git fetch --depth=1 origin ${LIBGUESTFS_TOOLS_GITHUB_SHA}
+      git checkout ${LIBGUESTFS_TOOLS_GITHUB_SHA}
+      cd ../
     fi
     cd guestfs-tools || return
     # Following tips to compile the guestfs-tools as depicted in https://www.mail-archive.com/libguestfs@redhat.com/msg22408.html
     git submodule update --init --force
     autoreconf -i
-    ../libguestfs/run ./configure CFLAGS=-fPIC
+    # https://github.com/libguestfs/libguestfs/blob/a47e2cf6a8972a7e81561c6b1959dadeeacc9dbe/docs/guestfs-release-notes-1.44.pod#internals
+    ../libguestfs/run ./configure CFLAGS=-fPIC CPPFLAGS=-I/opt/libguestfs/include
     ../libguestfs/run make -j $(getconf _NPROCESSORS_ONLN)
 
     echo "[+] /opt/libguestfs/run --help"
@@ -331,14 +350,14 @@ function install_libvmi() {
     cd "libvmi-v0.14.0" || return
 
     # install deps
-    aptitude install -f -y cmake flex bison libglib2.0-dev libjson-c-dev libyajl-dev doxygen
+    DEBIAN_FRONTEND=noninteractive apt-get install -q -f -y cmake flex bison libglib2.0-dev libjson-c-dev libyajl-dev doxygen
     # other deps
-    aptitude install -f -y pkg-config
+    DEBIAN_FRONTEND=noninteractive apt-get install -q -f -y pkg-config
     mkdir build
     cd build || return
     cmake -DENABLE_XEN=OFF -DENABLE_KVM=ON -DENABLE_XENSTORE=OFF -DENABLE_BAREFLANK=OFF ..
 
-    make -j"$(nproc)" install DESTDIR=/tmp/libvmi_builded
+    make -j"$(getconf _NPROCESSORS_ONLN)" install DESTDIR=/tmp/libvmi_builded
     dpkg-deb --build --root-owner-group /tmp/libvmi_builded
     apt-get -y -o Dpkg::Options::="--force-overwrite" install /tmp/libvmi_builded.deb
 
@@ -359,7 +378,7 @@ function install_libvmi() {
     cd "libvmi-python" || return
 
     # install deps
-    aptitude install -f -y python3-pkgconfig python3-cffi python3-future
+    DEBIAN_FRONTEND=noninteractive apt-get install -q -f -y python3-pkgconfig python3-cffi python3-future
     #pip3 install .
     python3 setup.py build
     pip3 install .
@@ -394,7 +413,7 @@ function install_libvmi() {
 #
 function install_pyvmidbg() {
     # deps
-    aptitude install -f python3-docopt python3-lxml cabextract
+    DEBIAN_FRONTEND=noninteractive apt-get install -yq -f python3-docopt python3-lxml cabextract
 
     # libvmi config entry
     # /etc/libvmi.conf:
@@ -438,12 +457,12 @@ function install_libvirt() {
     #rm -r /usr/local/lib/python2.7/dist-packages/libvirt*
 
     # remove old
-    apt-get purge libvirt0 libvirt-bin -y
-    apt-mark hold libvirt0 libvirt-bin
+    apt purge libvirt0 libvirt-bin -y || true
+    apt-mark hold libvirt0 libvirt-bin || true
 
     # In Ubuntu 22.04 the libvirt0 package is named libvirt
-    apt-get purge libvirt libvirt-bin -y
-    apt-mark hold libvirt libvirt-bin
+    apt-get purge libvirt libvirt-bin -y || true
+    apt-mark hold libvirt libvirt-bin || true
 
     # Remove any library binaries that might have been leftover
     rm -f /usr/local/lib/x86_64-linux-gnu/libvirt*
@@ -479,8 +498,8 @@ EOH
     apt-mark hold qemu
     echo "qemu hold" | sudo dpkg --set-selections 2>/dev/null
     echo "[+] Checking/deleting old versions of Libvirt"
-    apt-get purge libvirt0 libvirt-bin libvirt-$libvirt_version 2>/dev/null
-    dpkg -l|grep "libvirt-[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all 2>/dev/null
+    apt-get purge libvirt0 libvirt-bin libvirt-$libvirt_version 2>/dev/null || true
+    dpkg -l|grep "libvirt-[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all 2>/dev/null || true
     apt-get install meson plocate libxml2-utils gnutls-bin  gnutls-dev libxml2-dev bash-completion libreadline-dev numactl libnuma-dev python3-docutils flex -y
     # Remove old links
     updatedb
@@ -507,7 +526,7 @@ EOH
     tar xf libvirt-$libvirt_version.tar.xz
     cd libvirt-$libvirt_version || return
     if [ "$OS" = "Linux" ]; then
-        aptitude install -f plocate iptables python3-dev unzip numad libglib2.0-dev libsdl1.2-dev lvm2 python3-pip ebtables libosinfo-1.0-dev libnl-3-dev libnl-route-3-dev libyajl-dev xsltproc libdevmapper-dev libpciaccess-dev dnsmasq dmidecode librbd-dev libtirpc-dev -y 2>/dev/null
+        DEBIAN_FRONTEND=noninteractive apt-get install -yq -f plocate iptables python3-dev unzip numad libglib2.0-dev libsdl1.2-dev lvm2 python3-pip ebtables libosinfo-1.0-dev libnl-3-dev libnl-route-3-dev libyajl-dev xsltproc libdevmapper-dev libpciaccess-dev dnsmasq dmidecode librbd-dev libtirpc-dev -y 2>/dev/null
 
         # see https://github.com/doomedraven/Tools/issues/100
         install_apparmor
@@ -578,7 +597,7 @@ EOH
     )
     for file in "${FILES[@]}"; do
         if [ -f "$file" ]; then
-            sudo aa-complain "$file"
+            sudo aa-complain "$file" || true
         fi
     done
 
@@ -620,16 +639,17 @@ EOH
         #check links
         # sudo ln -s /usr/lib64/libvirt-qemu.so /lib/x86_64-linux-gnu/libvirt-qemu.so.0
         # sudo ln -s /usr/lib64/libvirt.so.0 /lib/x86_64-linux-gnu/libvirt.so.0
-        systemctl enable virtqemud.service virtnetworkd.service virtstoraged.service virtqemud.socket
+#        systemctl enable virtqemud.service virtnetworkd.service virtstoraged.service virtqemud.socket
         echo "[+] You should logout and login "
     fi
 
 }
 
 function install_virt_manager() {
+    gpg --keyserver keyserver.ubuntu.com --recv DAF3A6FDB26B62912D0E8E3FBE86EBB415104FDF
     #  pm-utils
     # from build-dep
-    aptitude install -f libgirepository1.0-dev gtk-doc-tools python3 python3-pip gir1.2-govirt-1.0 libgovirt-dev \
+    DEBIAN_FRONTEND=noninteractive apt-get install -yq -f libgirepository1.0-dev gtk-doc-tools python3 python3-pip gir1.2-govirt-1.0 libgovirt-dev \
     libgovirt-common libgovirt2 gir1.2-rest-0.7 unzip intltool augeas-doc ifupdown wodim cdrkit-doc indicator-application \
     augeas-tools radvd auditd systemtap nfs-common zfsutils python-openssl-doc samba \
     debootstrap sharutils-doc ssh-askpass gnome-keyring\
@@ -660,10 +680,10 @@ function install_virt_manager() {
     gstreamer1.0-x adwaita-icon-theme at-spi2-core augeas-lenses cpu-checker dconf-gsettings-backend dconf-service \
     fontconfig fontconfig-config fonts-dejavu-core genisoimage gir1.2-appindicator3-0.1 gir1.2-secret-1 \
     gobject-introspection intltool pkg-config libxml2-dev libxslt-dev python3-dev gir1.2-gtk-vnc-2.0 gir1.2-spiceclientgtk-3.0 libgtk-3-dev \
-    mlocate gir1.2-gtksource-4 libgtksourceview-4-0 libgtksourceview-4-common -y
+    mlocate gir1.2-gtksource-4 libgtksourceview-4-0 libgtksourceview-4-common checkinstall
     # should be installed first
     # moved out as some 20.04 doesn't have this libs %)
-    aptitude install -f -y python3-ntlm-auth libpython3-stdlib libbrlapi-dev libgirepository1.0-dev python3-testresources
+    DEBIAN_FRONTEND=noninteractive apt-get install -q -f -y python3-ntlm-auth libpython3-stdlib libbrlapi-dev libgirepository1.0-dev python3-testresources
     apt-get -y -o Dpkg::Options::="--force-overwrite" install ovmf
     pip3 install tqdm requests six urllib3 ipaddr ipaddress idna dbus-python certifi lxml cryptography pyOpenSSL chardet asn1crypto pycairo PySocks PyGObject
 
@@ -699,8 +719,10 @@ function install_virt_manager() {
     make -j"$(nproc)" install DESTDIR=/tmp/libvirt-glib_builded
     dpkg-deb --build --root-owner-group /tmp/libvirt-glib_builded
     apt-get -y -o Dpkg::Options::="--force-overwrite" install /tmp/libvirt-glib_builded.deb
-    make -j"$(nproc)"
 
+    make -j"$(getconf _NPROCESSORS_ONLN)"
+    # ToDo add blacklist
+    checkinstall --pkgname=libvirt-glib-1.0-0 --default
     # v4 is meson based
     # sudo meson build -D system=true
     cd /tmp || return
@@ -726,8 +748,8 @@ function install_virt_manager() {
         echo "export LIBVIRT_DEFAULT_URI=qemu:///system" >> "$HOME/.bashrc"
     fi
     sudo glib-compile-schemas --strict /usr/share/glib-2.0/schemas/
-    systemctl enable virtstoraged.service
-    systemctl start virtstoraged.service
+#    systemctl enable virtstoraged.service
+#    systemctl start virtstoraged.service
 
     # i440FX-Issue Win7: Unable to complete install: 'XML error: The PCI controller with index='0' must be model='pci-root' for this machine type, but model='pcie-root' was found instead'
     # Workaround: Edit Overiew in XML view and delete all controller entries with type="pci"
@@ -737,20 +759,21 @@ function install_virt_manager() {
 }
 
 function install_kvm_linux() {
+    curl -sSL https://libvirt.org/sources/gpg_key.asc | gpg --import -
     sed -i 's/# deb-src/deb-src/g' /etc/apt/sources.list
-    apt-get update 2>/dev/null
-    aptitude install -f build-essential locate python3-pip gcc pkg-config cpu-checker intltool libtirpc-dev -y 2>/dev/null
-    aptitude install -f gtk-update-icon-cache -y 2>/dev/null
+    apt update -yqq
+    DEBIAN_FRONTEND=noninteractive apt-get install -yq -f build-essential locate python3-pip gcc pkg-config cpu-checker intltool libtirpc-dev libjson-c-dev
+    DEBIAN_FRONTEND=noninteractive apt-get install -yq -f gtk-update-icon-cache
 
     # WSL support
-    aptitude install -f gcc make gnutls-bin
+    DEBIAN_FRONTEND=noninteractive apt-get install -yq -f gcc make gnutls-bin
 
     install_libvirt
 
-    systemctl enable libvirtd.service virtlogd.socket
-    systemctl restart libvirtd.service virtlogd.socket
-
-    kvm-ok
+#    systemctl enable libvirtd.service virtlogd.socket
+#    systemctl restart libvirtd.service virtlogd.socket
+#
+#    kvm-ok
 
     if ! grep -q -E '^net.bridge.bridge-nf-call-ip6tables' /etc/sysctl.conf; then
         cat >> /etc/sysctl.conf << EOF
@@ -762,18 +785,19 @@ EOF
     # Ubuntu 18.04:
     # /dev/kvm permissions always changed to root after reboot
     # "chown root:libvirt /dev/kvm" doesnt help
-    addgroup kvm
+    addgroup kvm || true
     usermod -a -G kvm "$(whoami)"
     if [[ -n "$username" ]]; then
         usermod -a -G kvm "$username"
     fi
-    chgrp kvm /dev/kvm
+#    chgrp kvm /dev/kvm
+    mkdir -p /etc/udev/rules.d
     if [ ! -f /etc/udev/rules.d/50-qemu-kvm.rules ]; then
         echo 'KERNEL=="kvm", GROUP="kvm", MODE="0660"' >> /etc/udev/rules.d/50-qemu-kvm.rules
     fi
 
-    echo 1 > /sys/module/kvm/parameters/ignore_msrs
-    echo 0 > /sys/module/kvm/parameters/report_ignored_msrs
+#    echo 1 > /sys/module/kvm/parameters/ignore_msrs
+#    echo 0 > /sys/module/kvm/parameters/report_ignored_msrs
 
     if [ ! -f /etc/modprobe.d/kvm.conf ]; then
         cat >> /etc/modprobe.d/kvm.conf << EOF
@@ -860,17 +884,18 @@ function install_jemalloc() {
 
     # https://zapier.com/engineering/celery-python-jemalloc/
     if ! $(dpkg -l "libjemalloc*" | grep -q "ii  libjemalloc"); then
-        aptitude install -f curl build-essential jq autoconf libjemalloc-dev -y
+        DEBIAN_FRONTEND=noninteractive apt-get install -f curl build-essential jq autoconf libjemalloc-dev -y
     fi
 }
 
 function install_qemu() {
+    curl -sSL https://keys.openpgp.org/vks/v1/by-fingerprint/CEACC9E15534EBABB82D3FA03353C9CEF108B584 | gpg --import -
     cd /tmp || return
 
     echo '[+] Cleaning QEMU old install if exists'
-    rm -r /usr/share/qemu >/dev/null 2>&1
+    rm -rf /usr/share/qemu >/dev/null 2>&1
     dpkg -r ubuntu-vm-builder python-vm-builder >/dev/null 2>&1
-    dpkg -l |grep qemu |cut -d " " -f 3|xargs dpkg --purge --force-all >/dev/null 2>&1
+    dpkg -l |grep qemu |cut -d " " -f 3|xargs dpkg --purge --force-all || true >/dev/null 2>&1
 
     echo '[+] Downloading QEMU source code'
     if [ ! -f qemu-$qemu_version.tar.xz ]; then
@@ -891,11 +916,11 @@ function install_qemu() {
 
     if [ "$OS" = "Linux" ]; then
         # ToDo add check if we have those repos already
-        aptitude install -f software-properties-common -y
+        DEBIAN_FRONTEND=noninteractive apt-get install -yq -f software-properties-common
         add-apt-repository universe -y
-        apt-get update 2>/dev/null
-        aptitude install -f python3-pip ninja-build libssh2-1-dev vde2 liblzo2-dev libghc-gtk3-dev libsnappy-dev libbz2-dev libxml2-dev google-perftools libgoogle-perftools-dev libvde-dev python3-sphinx-rtd-theme -y
-        aptitude install -f debhelper libusb-1.0-0-dev libxen-dev uuid-dev xfslibs-dev libjpeg-dev libusbredirparser-dev device-tree-compiler texinfo libbluetooth-dev libbrlapi-dev libcap-ng-dev libcurl4-gnutls-dev libfdt-dev gnutls-dev libiscsi-dev libncurses5-dev libnuma-dev libcacard-dev librados-dev librbd-dev libsasl2-dev libseccomp-dev libspice-server-dev libaio-dev libcap-dev libattr1-dev libpixman-1-dev libgtk2.0-bin  libxml2-utils systemtap-sdt-dev uml-utilities libcapstone-dev -y
+        apt-get update  -yqq 2>/dev/null
+        DEBIAN_FRONTEND=noninteractive apt-get install -yq -f python3-pip ninja-build openbios-sparc openbios-ppc libssh2-1-dev vde2 liblzo2-dev libghc-gtk3-dev libsnappy-dev libbz2-dev libxml2-dev google-perftools libgoogle-perftools-dev libvde-dev python3-sphinx-rtd-theme -y
+        DEBIAN_FRONTEND=noninteractive apt-get install -yq -f debhelper libusb-1.0-0-dev libxen-dev uuid-dev xfslibs-dev libjpeg-dev libusbredirparser-dev device-tree-compiler texinfo libbluetooth-dev libbrlapi-dev libcap-ng-dev libcurl4-gnutls-dev libfdt-dev gnutls-dev libiscsi-dev libncurses5-dev libnuma-dev libcacard-dev librados-dev librbd-dev libsasl2-dev libseccomp-dev libspice-server-dev libaio-dev libcap-dev libattr1-dev libpixman-1-dev libgtk2.0-bin  libxml2-utils systemtap-sdt-dev uml-utilities libcapstone-dev -y
         # qemu docs required
         PERL_MM_USE_DEFAULT=1 perl -MCPAN -e install "Perl/perl-podlators"
         PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install sphinx ninja
@@ -948,7 +973,7 @@ function install_qemu() {
                 fi
                 mkdir -p /tmp/qemu-"$qemu_version"_builded/DEBIAN
                 echo -e "Package: qemu\nVersion: $qemu_version\nArchitecture: $ARCH\nMaintainer: $MAINTAINER\nDescription: Custom antivm qemu" > /tmp/qemu-"$qemu_version"_builded/DEBIAN/control
-                make -j"$(nproc)" install DESTDIR=/tmp/qemu-"$qemu_version"_builded
+                make -j"$(getconf _NPROCESSORS_ONLN)" install DESTDIR=/tmp/qemu-"$qemu_version"_builded
                 dpkg-deb --build --root-owner-group /tmp/qemu-"$qemu_version"_builded
                 apt-get -y -o Dpkg::Options::="--force-overwrite" install /tmp/qemu-"$qemu_version"_builded.deb
                 # hack for libvirt/virt-manager
@@ -988,7 +1013,7 @@ function install_qemu() {
 function install_seabios() {
     cd /tmp || return
     echo '[+] Installing SeaBios dependencies'
-    aptitude install -f git acpica-tools -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -yq -f git acpica-tools
     if [ -d seabios ]; then
         rm -r seabios
     fi
@@ -1002,12 +1027,12 @@ function install_seabios() {
         # make help
         # make menuconfig -> BIOS tables -> disable Include default ACPI DSDT
         # get rid of this hack
-        make -j"$(nproc)" 2>/dev/null
+        make -j"$(getconf _NPROCESSORS_ONLN)" || true
         # Windows 10(latest rev.) is uninstallable without ACPI_DSDT
         # sed -i 's/CONFIG_ACPI_DSDT=y/CONFIG_ACPI_DSDT=n/g' .config
         sed -i 's/CONFIG_XEN=y/CONFIG_XEN=n/g' .config
         sed -i 's/PYTHON=python/PYTHON=python3/g' Makefile
-        if make -j "$(nproc)"; then
+        if make -j "$(getconf _NPROCESSORS_ONLN)"; then
             echo '[+] Replacing old bios.bin to new out/bios.bin'
             bios=0
             SHA256_BIOS=$(shasum -a 256 out/bios.bin|awk '{print $1}')
@@ -1155,7 +1180,7 @@ cat << EndOfHelp
         yara: error while loading shared libraries: libyara.so.3: cannot open shared object file: No such file or directory
 
     Solution 1:
-        aptitude install -f libyara3
+        DEBIAN_FRONTEND=noninteractive apt-get install -f libyara3
     Solution 2:
         sudo echo "/usr/local/lib" >> /etc/ld.so.conf
         sudo ldconfig
@@ -1168,7 +1193,7 @@ cat << EndOfHelp
     $ pip3 install libxml2-python3
 
     3. ImportError: No module named requests
-    $ aptitude install -f python-requests
+    $ DEBIAN_FRONTEND=noninteractive apt-get install -f python-requests
 
     4. Error launching details: Namespace GtkVnc not available
     $ ./kvm-qemu.sh libvirt
@@ -1177,22 +1202,22 @@ cat << EndOfHelp
     $ ./kvm-qemu.sh libvirt
 
     6. ValueError: Namespace Libosinfo not available
-    $ aptitude install -f libosinfo-1.0
+    $ DEBIAN_FRONTEND=noninteractive apt-get install -f libosinfo-1.0
 
     7. ImportError: No module named ipaddr
-    $ aptitude install -f python-ipaddr
+    $ DEBIAN_FRONTEND=noninteractive apt-get install -f python-ipaddr
 
     8. Namespace Gtk not available: Could not open display: localhost:10.0
     8 ValueError: Namespace GtkSource not available
-    $ aptitude install -f gir1.2-gtksource-4 libgtksourceview-4-0 libgtksourceview-4-common
+    $ DEBIAN_FRONTEND=noninteractive apt-get install -f gir1.2-gtksource-4 libgtksourceview-4-0 libgtksourceview-4-common
     * Error will specify version, example gi.require_version("GtkSource", "4"), if that version is not available for your distro
     * you will need downgrade your virt-manager with $ sudo rm -r /usr/share/virt-manager and install older version
 
     9. ImportError: cannot import name Vte
-    $ aptitude install -f gir1.2-vte-2.90
+    $ DEBIAN_FRONTEND=noninteractive apt-get install -f gir1.2-vte-2.90
 
     10. TypeError: Couldn't find foreign struct converter for 'cairo.Context'
-    $ aptitude install -f python3-gi-cairo
+    $ DEBIAN_FRONTEND=noninteractive apt-get install -f python3-gi-cairo
 
 
 EndOfHelp
@@ -1314,7 +1339,7 @@ case "$COMMAND" in
     issues;;
 'all')
     configure_needreboot
-    aptitude install -f language-pack-UTF-8 -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -yq -f language-pack-UTF-8
     install_qemu
     install_seabios
     install_kvm_linux
@@ -1391,7 +1416,7 @@ case "$COMMAND" in
     configure_needreboot;;
 'mosh')
     if [ "$OS" = "Linux" ]; then
-        sudo aptitude install -f mosh -y
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq -f mosh
     else
         echo "https://mosh.org/#getting"
     fi
