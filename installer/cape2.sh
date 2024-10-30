@@ -887,8 +887,8 @@ function install_postgresql() {
     sudo systemctl enable postgresql.service
     sudo systemctl start postgresql.service
 
-    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE cape REFRESH COLLATION VERSION;\""
-    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE postgres REFRESH COLLATION VERSION;\""
+#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE cape REFRESH COLLATION VERSION;\""
+#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE postgres REFRESH COLLATION VERSION;\""
 }
 
 function install_capa() {
