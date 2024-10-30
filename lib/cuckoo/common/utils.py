@@ -106,15 +106,6 @@ texttypes = [
 ]
 
 
-VALID_LINUX_TYPES = ["Bourne-Again", "POSIX shell script", "ELF", "Python"]
-
-
-def get_platform(magic):
-    if magic and any(x in magic for x in VALID_LINUX_TYPES):
-        return "linux"
-    return "windows"
-
-
 # this doesn't work for bytes
 # textchars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x100)) - {0x7F})
 # is_binary_file = lambda bytes: bool(bytes.translate(None, textchars))
@@ -307,6 +298,8 @@ def bytes2str(convert):
                     tmp_dict[k] = v.decode()
                 except UnicodeDecodeError:
                     tmp_dict[k] = "".join(str(ord(_)) for _ in v)
+            elif isinstance(v, str):
+                tmp_dict[k] = v
         return tmp_dict
     elif isinstance(convert, list):
         converted_list = []
@@ -347,6 +340,18 @@ def convert_to_printable(s: str, cache=None):
 
 def convert_to_printable_and_truncate(s: str, buf: int, cache=None):
     return convert_to_printable(f"{s[:buf]} <truncated>" if len(s) > buf else s, cache=cache)
+
+
+def truncate_str(s: str, max_length: int, marker=" <truncated>"):
+    """Truncate a string if its length exceeds the configured `max_length`.
+
+    If `max_length` is less than or equal to 0, the string is not modified.
+    If the string is truncated, `marker` is added to the end."""
+    truncate_size = min(max_length, len(s))
+    if truncate_size > 0 and truncate_size < len(s):
+        return f"{s[:truncate_size]}{marker}"
+    else:
+        return s
 
 
 def convert_filename_char(c):

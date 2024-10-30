@@ -33,7 +33,7 @@ from lib.cuckoo.common.exceptions import (
 from lib.cuckoo.common.integrations.parse_pe import PortableExecutable
 from lib.cuckoo.common.objects import PCAP, URL, File, Static
 from lib.cuckoo.common.path_utils import path_delete, path_exists
-from lib.cuckoo.common.utils import create_folder
+from lib.cuckoo.common.utils import bytes2str, create_folder, get_options
 
 try:
     from sqlalchemy import (
@@ -103,8 +103,8 @@ sandbox_packages = (
     "msbuild",
     "sct",
     "xslt",
-    "Shellcode",
-    "Shellcode_x64",
+    "shellcode",
+    "shellcode_x64",
     "generic",
     "iso",
     "vhd",
@@ -119,6 +119,7 @@ repconf = Config("reporting")
 distconf = Config("distributed")
 web_conf = Config("web")
 LINUX_ENABLED = web_conf.linux.enabled
+LINUX_STATIC = web_conf.linux.static_only
 DYNAMIC_ARCH_DETERMINATION = web_conf.general.dynamic_arch_determination
 
 if repconf.mongodb.enabled:
@@ -172,36 +173,6 @@ tasks_tags = Table(
     Column("task_id", Integer, ForeignKey("tasks.id")),
     Column("tag_id", Integer, ForeignKey("tags.id")),
 )
-
-
-VALID_LINUX_TYPES = ("Bourne-Again", "POSIX shell script", "ELF", "Python")
-
-
-def _get_linux_vm_tag(mgtype):
-    mgtype = mgtype.lower()
-    if mgtype.startswith(VALID_LINUX_TYPES) and "motorola" not in mgtype and "renesas" not in mgtype:
-        return False
-    if "mipsel" in mgtype:
-        return "mipsel"
-    elif "mips" in mgtype:
-        return "mips"
-    elif "arm" in mgtype:
-        return "arm"
-    # elif "armhl" in mgtype:
-    #    return {"tags":"armhl"}
-    elif "sparc" in mgtype:
-        return "sparc"
-    # elif "motorola" in mgtype:
-    #    return "motorola"
-    # elif "renesas sh" in mgtype:
-    #    return "renesassh"
-    elif "powerpc" in mgtype:
-        return "powerpc"
-    elif "32-bit" in mgtype:
-        return "x64"
-    elif "elf 64-bit" in mgtype and "x86-64" in mgtype:
-        return "x64"
-    return "x64"
 
 
 def get_count(q, property):
@@ -1005,8 +976,7 @@ class _Database:
         """
         machine.locked = False
         machine.locked_changed_on = datetime.now()
-        self.session.add(machine)
-
+        self.session.merge(machine)
         return machine
 
     def count_machines_available(self, label=None, platform=None, tags=None, arch=None, include_reserved=False, os_version=None):
@@ -1182,25 +1152,15 @@ class _Database:
 
             if DYNAMIC_ARCH_DETERMINATION:
                 # Assign architecture to task to fetch correct VM type
-                # This isn't 100% full proof
-                if "PE32+" in file_type or "64-bit" in file_type or package.endswith("_x64"):
-                    if tags:
-                        tags += ",x64"
-                    else:
-                        tags = "x64"
-                else:
-                    if LINUX_ENABLED and platform == "linux":
-                        linux_arch = _get_linux_vm_tag(file_type)
-                        if linux_arch:
-                            if tags:
-                                tags += f",{linux_arch}"
-                            else:
-                                tags = linux_arch
-                    else:
-                        if tags:
-                            tags += ",x86"
-                        else:
-                            tags = "x86"
+
+                # This isn't 100% fool proof
+                _tags = tags.split(",") if isinstance(tags, str) else []
+                arch_tag = fileobj.predict_arch()
+                if package.endswith("_x64"):
+                    _tags.append("x64")
+                elif arch_tag:
+                    _tags.append(arch_tag)
+                tags = ",".join(set(_tags))
             task = Task(obj.file_path)
             task.sample_id = sample.id
 
@@ -1358,13 +1318,13 @@ class _Database:
             username=username,
         )
 
-    def _identify_aux_func(self, file: bytes, package: str) -> tuple:
+    def _identify_aux_func(self, file: bytes, package: str, check_shellcode: bool = True) -> tuple:
         # before demux we need to check as msix has zip mime and we don't want it to be extracted:
         tmp_package = False
         if not package:
             f = SflockFile.from_path(file)
             try:
-                tmp_package = sflock_identify(f, check_shellcode=True)
+                tmp_package = sflock_identify(f, check_shellcode=check_shellcode)
             except Exception as e:
                 log.error(f"Failed to sflock_ident due to {e}")
                 tmp_package = "generic"
@@ -1381,6 +1341,92 @@ class _Database:
                 package = tmp_package
 
         return package, tmp_package
+
+    # Submission hooks to manipulate arguments of tasks execution
+    def recon(
+        self,
+        filename,
+        orig_options,
+        timeout=0,
+        enforce_timeout=False,
+        package="",
+        tags=None,
+        static=False,
+        priority=1,
+        machine="",
+        platform="",
+        custom="",
+        memory=False,
+        clock=None,
+        unique=False,
+        referrer=None,
+        tlp=None,
+        tags_tasks=False,
+        route=None,
+        cape=False,
+        category=None,
+    ):
+
+        # Get file filetype to ensure self extracting archives run longer
+        if not isinstance(filename, str):
+            filename = bytes2str(filename)
+
+        lowered_filename = filename.lower()
+
+        # sfx = File(filename).is_sfx()
+
+        if "malware_name" in lowered_filename:
+            orig_options += "<options_here>"
+        # if sfx:
+        #    orig_options += ",timeout=500,enforce_timeout=1,procmemdump=1,procdump=1"
+        #    timeout = 500
+        #    enforce_timeout = True
+
+        if web_conf.general.yara_recon:
+            hits = File(filename).get_yara("binaries")
+            for hit in hits:
+                cape_name = hit["meta"].get("cape_type", "")
+                if not cape_name.endswith(("Crypter", "Packer", "Obfuscator", "Loader", "Payload")):
+                    continue
+
+                orig_options_parsed = get_options(orig_options)
+                parsed_options = get_options(hit["meta"].get("cape_options", ""))
+                if "tags" in parsed_options:
+                    tags = "," + parsed_options["tags"] if tags else parsed_options["tags"]
+                    del parsed_options["tags"]
+                # custom packages should be added to lib/cuckoo/core/database.py -> sandbox_packages list
+                if "package" in parsed_options:
+                    package = parsed_options["package"]
+                    del parsed_options["package"]
+
+                if "category" in parsed_options:
+                    category = parsed_options["category"]
+                    del parsed_options["category"]
+
+                orig_options_parsed.update(parsed_options)
+                orig_options = ",".join([f"{k}={v}" for k, v in orig_options_parsed.items()])
+
+        return (
+            static,
+            priority,
+            machine,
+            platform,
+            custom,
+            memory,
+            clock,
+            unique,
+            referrer,
+            tlp,
+            tags_tasks,
+            route,
+            cape,
+            orig_options,
+            timeout,
+            enforce_timeout,
+            package,
+            tags,
+            category,
+        )
 
     def demux_sample_and_add_to_db(
         self,
@@ -1410,6 +1456,7 @@ class _Database:
         cape=False,
         user_id=0,
         username=False,
+        category=None,
     ):
         """
         Handles ZIP file submissions, submitting each extracted file to the database
@@ -1418,10 +1465,69 @@ class _Database:
         task_id = False
         task_ids = []
         config = {}
+        details = {}
         sample_parent_id = None
 
         if not isinstance(file_path, bytes):
             file_path = file_path.encode()
+
+        (
+            static,
+            priority,
+            machine,
+            platform,
+            custom,
+            memory,
+            clock,
+            unique,
+            referrer,
+            tlp,
+            tags_tasks,
+            route,
+            cape,
+            options,
+            timeout,
+            enforce_timeout,
+            package,
+            tags,
+            category,
+        ) = self.recon(
+            file_path,
+            options,
+            timeout=timeout,
+            enforce_timeout=enforce_timeout,
+            package=package,
+            tags=tags,
+            static=static,
+            priority=priority,
+            machine=machine,
+            platform=platform,
+            custom=custom,
+            memory=memory,
+            clock=clock,
+            tlp=tlp,
+            tags_tasks=tags_tasks,
+            route=route,
+            cape=cape,
+            category=category,
+        )
+
+        if category == "static":
+            # force change of category
+            task_ids += self.add_static(
+                file_path=file_path,
+                priority=priority,
+                tlp=tlp,
+                user_id=user_id,
+                username=username,
+                options=options,
+                package=package,
+            )
+            return task_ids, details
+
+        check_shellcode = True
+        if options and "check_shellcode=0" in options:
+            check_shellcode = False
 
         if not package:
             if "file=" in options:
@@ -1429,10 +1535,10 @@ class _Database:
                 package = "zip"
             else:
                 # Checking original file as some filetypes doesn't require demux
-                package, _ = self._identify_aux_func(file_path, package)
+                package, _ = self._identify_aux_func(file_path, package, check_shellcode=check_shellcode)
 
         # extract files from the (potential) archive
-        extracted_files = demux_sample(file_path, package, options, platform=platform)
+        extracted_files, demux_error_msgs = demux_sample(file_path, package, options, platform=platform)
         # check if len is 1 and the same file, if diff register file, and set parent
         if extracted_files and (file_path, platform) not in extracted_files:
             sample_parent_id = self.register_sample(File(file_path), source_url=source_url)
@@ -1441,6 +1547,18 @@ class _Database:
 
         # create tasks for each file in the archive
         for file, platform in extracted_files:
+            # ToDo we lose package here and send APKs to windows
+            if platform in ("linux", "darwin") and LINUX_STATIC:
+                task_ids += self.add_static(
+                    file_path=file_path,
+                    priority=priority,
+                    tlp=tlp,
+                    user_id=user_id,
+                    username=username,
+                    options=options,
+                    package=package,
+                )
+                continue
             if static:
                 # On huge loads this just become a bottleneck
                 config = False
@@ -1457,7 +1575,7 @@ class _Database:
 
             if not config and not only_extraction:
                 if not package:
-                    package, tmp_package = self._identify_aux_func(file, "")
+                    package, tmp_package = self._identify_aux_func(file, "", check_shellcode=check_shellcode)
 
                     if not tmp_package:
                         log.info("Do sandbox packages need an update? Sflock identifies as: %s - %s", tmp_package, file)
@@ -1513,9 +1631,10 @@ class _Database:
             if task_id:
                 task_ids.append(task_id)
 
-        details = {}
         if config and isinstance(config, dict):
             details = {"config": config.get("cape_config", {})}
+        if demux_error_msgs:
+            details["errors"] = demux_error_msgs
         # this is aim to return custom data, think of this as kwargs
         return task_ids, details
 
@@ -1589,7 +1708,7 @@ class _Database:
         user_id=0,
         username=False,
     ):
-        extracted_files = demux_sample(file_path, package, options)
+        extracted_files, demux_error_msgs = demux_sample(file_path, package, options)
         sample_parent_id = None
         # check if len is 1 and the same file, if diff register file, and set parent
         if not isinstance(file_path, bytes):
@@ -2042,7 +2161,7 @@ class _Database:
 
         return task
 
-    # TODO This function doesn't appear to be used. Can we pull it?
+    # This function is used by the runstatistics community module.
     def add_statistics_to_task(self, task_id, details):  # pragma: no cover
         """add statistic to task
         @param task_id: ID of the task to query.

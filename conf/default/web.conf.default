@@ -78,8 +78,10 @@ enabled = no
 
 #enable linux fields on webgui
 [linux]
-#For advanced users only, can be buggy, linux analysis is work in progress for fun
+# For advanced users only, can be buggy, linux analysis is work in progress for fun
 enabled = no
+# independent of enabled or not. To not show linux options, but process statically those files
+static_only = no
 
 [malscore]
 enabled = no
@@ -197,6 +199,7 @@ guest_rdp_port = 3389
 # VM tags may be used to specify on which guest machines a sample should be run
 # NOTE - One of the following OS version tags MUST be included for Windows VMs:
 # winxp, win7, win8, win10, win11
+# Ensure that VM is not set to reserved in config!
 # Some samples will only detonate on specific versions of Windows (see web.conf packages for more info)
 # Example: MSIX - Windows >= 10
 msix = win10,win11

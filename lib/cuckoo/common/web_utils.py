@@ -30,11 +30,9 @@ from lib.cuckoo.common.integrations.parse_pe import HAVE_PEFILE, IsPEImage, pefi
 from lib.cuckoo.common.objects import File
 from lib.cuckoo.common.path_utils import path_exists, path_mkdir, path_write_file
 from lib.cuckoo.common.utils import (
-    bytes2str,
     generate_fake_name,
     get_ip_address,
     get_options,
-    get_platform,
     get_user_filename,
     sanitize_filename,
     store_temp_file,
@@ -536,74 +534,6 @@ def fix_section_permission(path):
         log.info(e)
 
 
-# Submission hooks to manipulate arguments of tasks execution
-def recon(
-    filename,
-    orig_options,
-    timeout,
-    enforce_timeout,
-    package,
-    tags,
-    static,
-    priority,
-    machine,
-    platform,
-    custom,
-    memory,
-    clock,
-    unique,
-    referrer,
-    tlp,
-    tags_tasks,
-    route,
-    cape,
-):
-    if not isinstance(filename, str):
-        filename = bytes2str(filename)
-
-    lowered_filename = filename.lower()
-
-    if web_cfg.general.yara_recon:
-        hits = File(filename).get_yara("binaries")
-        for hit in hits:
-            cape_name = hit["meta"].get("cape_type", "")
-            if not cape_name.endswith(("Crypter", "Packer", "Obfuscator", "Loader")):
-                continue
-
-            parsed_options = get_options(hit["meta"].get("cape_options", ""))
-            if "tags" in parsed_options:
-                tags = "," + parsed_options["tags"] if tags else parsed_options["tags"]
-            # custom packages should be added to lib/cuckoo/core/database.py -> sandbox_packages list
-            if "package" in parsed_options:
-                package = parsed_options["package"]
-
-    if "name" in lowered_filename:
-        orig_options += ",timeout=400,enforce_timeout=1,procmemdump=1,procdump=1"
-        timeout = 400
-        enforce_timeout = True
-
-    return (
-        static,
-        priority,
-        machine,
-        platform,
-        custom,
-        memory,
-        clock,
-        unique,
-        referrer,
-        tlp,
-        tags_tasks,
-        route,
-        cape,
-        orig_options,
-        timeout,
-        enforce_timeout,
-        package,
-        tags,
-    )
-
-
 def get_magic_type(data):
     try:
         if path_exists(data):
@@ -765,52 +695,11 @@ def download_file(**kwargs):
         if len(kwargs["request"].FILES) == 1:
             return "error", {"error": "Sorry no x64 support yet"}
 
-    (
-        static,
-        priority,
-        machine,
-        platform,
-        custom,
-        memory,
-        clock,
-        unique,
-        referrer,
-        tlp,
-        tags_tasks,
-        route,
-        cape,
-        kwargs["options"],
-        timeout,
-        enforce_timeout,
-        package,
-        tags,
-    ) = recon(
-        kwargs["path"],
-        kwargs["options"],
-        timeout,
-        enforce_timeout,
-        package,
-        tags,
-        static,
-        priority,
-        machine,
-        platform,
-        custom,
-        memory,
-        clock,
-        unique,
-        referrer,
-        tlp,
-        tags_tasks,
-        route,
-        cape,
-    )
-
     if not kwargs.get("task_machines", []):
         kwargs["task_machines"] = [None]
 
     if DYNAMIC_PLATFORM_DETERMINATION:
-        platform = get_platform(magic_type)
+        platform = File(kwargs["path"]).get_platform()
     if platform == "linux" and not linux_enabled and "Python" not in magic_type:
         return "error", {"error": "Linux binaries analysis isn't enabled"}
 
@@ -877,7 +766,7 @@ def download_file(**kwargs):
     if not onesuccess:
         return "error", {"error": f"Provided hash not found on {kwargs['service']}"}
 
-    return "ok", kwargs["task_ids"]
+    return "ok", {"task_ids": kwargs["task_ids"], "errors": extra_details.get("errors", [])}
 
 
 def save_script_to_storage(task_ids, kwargs):
@@ -956,7 +845,9 @@ def category_all_files(task_id, category, base_path):
     if category == "CAPE":
         category = "CAPE.payloads"
     if repconf.mongodb.enabled:
-        analysis = mongo_find_one("analysis", {"info.id": int(task_id)}, {f"{category}.sha256": 1, "_id": 0}, sort=[("_id", -1)])
+        analysis = mongo_find_one(
+            "analysis", {"info.id": int(task_id)}, {f"{category}.{FILE_REF_KEY}": 1, "_id": 0}, sort=[("_id", -1)]
+        )
     # if es_as_db:
     #    # ToDo missed category
     #    analysis = es.search(index=get_analysis_index(), query=get_query_by_info_id(task_id))["hits"]["hits"][0]["_source"]
@@ -1433,15 +1324,19 @@ def thirdpart_aux(samples, prefix, opt_filename, details, settings):
             if content:
                 details["content"] = content
 
+        errors = {}
         if not details.get("content", False):
-            status, task_ids_tmp = download_file(**details)
+            status, tasks_details = download_file(**details)
         else:
             details["service"] = "Local"
-            status, task_ids_tmp = download_file(**details)
+            status, tasks_details = download_file(**details)
         if status == "error":
-            details["errors"].append({h: task_ids_tmp})
+            details["errors"].append({h: tasks_details})
         else:
-            details["task_ids"] = task_ids_tmp
+            details["task_ids"] = tasks_details.get("task_ids", [])
+            errors = tasks_details.get("errors")
+            if errors:
+                details["errors"].extend(errors)
 
     return details
 

@@ -232,6 +232,7 @@ def get_analysis_info(db, id=-1, task=None):
             {
                 "info": 1,
                 "target.file.virustotal.summary": 1,
+                "url.virustotal.summary": 1,
                 "malscore": 1,
                 "detections": 1,
                 "network.pcap_sha256": 1,
@@ -255,6 +256,7 @@ def get_analysis_info(db, id=-1, task=None):
             _source=[
                 "info",
                 "target.file.virustotal.summary",
+                "url.virustotal.summary",
                 "malscore",
                 "detections",
                 "network.pcap_sha256",
@@ -310,6 +312,9 @@ def get_analysis_info(db, id=-1, task=None):
                     new[keyword] = rtmp["info"]["target"][keyword]
             if rtmp["target"]["file"].get("virustotal", {}).get("summary", False):
                 new["virustotal_summary"] = rtmp["target"]["file"]["virustotal"]["summary"]
+
+        if rtmp.get("url", {}).get("virustotal", {}).get("summary", False):
+            new["virustotal_summary"] = rtmp["url"]["virustotal"]["summary"]
 
         if settings.MOLOCH_ENABLED:
             if settings.MOLOCH_BASE[-1] != "/":
@@ -497,6 +502,7 @@ def index(request, page=1):
         request,
         "analysis/index.html",
         {
+            "title": "Recent Analysis",
             "files": analyses_files,
             "static": analyses_static,
             "urls": analyses_urls,
@@ -529,7 +535,8 @@ def pending(request):
                 }
             )
 
-    return render(request, "analysis/pending.html", {"tasks": pending, "count": len(pending)})
+    data = {"tasks": pending, "count": len(pending), "title": "Pending Tasks"}
+    return render(request, "analysis/pending.html", data)
 
 
 # @require_safe
@@ -573,7 +580,18 @@ def load_files(request, task_id, category):
     @param task_id: cuckoo task id
     """
     is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
-    if is_ajax and category in ("CAPE", "dropped", "behavior", "strace", "debugger", "network", "procdump", "procmemory", "memory"):
+    if is_ajax and category in (
+        "CAPE",
+        "dropped",
+        "behavior",
+        "strace",
+        "debugger",
+        "network",
+        "procdump",
+        "procmemory",
+        "memory",
+        "tracee",
+    ):
         data = {}
         debugger_logs = {}
         bingraph_dict_content = {}
@@ -590,9 +608,84 @@ def load_files(request, task_id, category):
                     data["debugger"] = data["behavior"]
                 if category == "strace":
                     data["strace"] = data["behavior"]
+            elif category == "tracee":
+                data = mongo_find_one("analysis", {"info.id": int(task_id)}, {category: 1, "info.tlp": 1, "_id": 0})
+                tmp = data["tracee"]
+                data["tracee"] = {}
+                data["tracee"]["rawData"] = tmp
+                with open("/opt/CAPEv2/data/linux/linux-syscalls.json", "r") as f:
+                    data["tracee"]["syscalls_decoded"] = json.load(f)
+                    data["tracee"]["syscalls_decoded"]["syscalls"].extend(
+                        [
+                            {"name": "stdio_over_socket", "cat": "SIGNATURISED"},
+                            {"name": "k8s_api_connection", "cat": "SIGNATURISED"},
+                            {"name": "aslr_inspection", "cat": "SIGNATURISED"},
+                            {"name": "proc_mem_code_injection", "cat": "SIGNATURISED"},
+                            {"name": "docker_abuse", "cat": "SIGNATURISED"},
+                            {"name": "scheduled_task_mod", "cat": "SIGNATURISED"},
+                            {"name": "ld_preload", "cat": "SIGNATURISED"},
+                            {"name": "cgroup_notify_on_release", "cat": "SIGNATURISED"},
+                            {"name": "default_loader_mod", "cat": "SIGNATURISED"},
+                            {"name": "sudoers_modification", "cat": "SIGNATURISED"},
+                            {"name": "sched_debug_recon", "cat": "SIGNATURISED"},
+                            {"name": "system_request_key_mod", "cat": "SIGNATURISED"},
+                            {"name": "cgroup_release_agent", "cat": "SIGNATURISED"},
+                            {"name": "rcd_modification", "cat": "SIGNATURISED"},
+                            {"name": "core_pattern_modification", "cat": "SIGNATURISED"},
+                            {"name": "proc_kcore_read", "cat": "SIGNATURISED"},
+                            {"name": "proc_mem_access", "cat": "SIGNATURISED"},
+                            {"name": "hidden_file_created", "cat": "SIGNATURISED"},
+                            {"name": "anti_debugging", "cat": "SIGNATURISED"},
+                            {"name": "ptrace_code_injection", "cat": "SIGNATURISED"},
+                            {"name": "process_vm_write_inject", "cat": "SIGNATURISED"},
+                            {"name": "disk_mount", "cat": "SIGNATURISED"},
+                            {"name": "dynamic_code_loading", "cat": "SIGNATURISED"},
+                            {"name": "fileless_execution", "cat": "SIGNATURISED"},
+                            {"name": "illegitimate_shell", "cat": "SIGNATURISED"},
+                            {"name": "kernel_module_loading", "cat": "SIGNATURISED"},
+                            {"name": "k8s_cert_theft", "cat": "SIGNATURISED"},
+                            {"name": "proc_fops_hooking", "cat": "SIGNATURISED"},
+                            {"name": "syscall_hooking", "cat": "SIGNATURISED"},
+                            {"name": "dropped_executable", "cat": "SIGNATURISED"},
+                            {"name": "sched_debug_recon", "cat": "SIGNATURISED"},
+                            {"name": "sched_process_exec", "cat": "SIGNATURISED"},
+                            {"name": "security_inode_unlink", "cat": "SIGNATURISED"},
+                            {"name": "security_bpf_prog", "cat": "SIGNATURISED"},
+                            {"name": "security_socket_connect", "cat": "SIGNATURISED"},
+                            {"name": "security_socket_accept", "cat": "SIGNATURISED"},
+                            {"name": "security_socket_bind", "cat": "SIGNATURISED"},
+                            {"name": "security_sb_mount", "cat": "SIGNATURISED"},
+                            {"name": "net_packet_icmp", "cat": "SIGNATURISED"},
+                            {"name": "net_packet_icmpv6", "cat": "SIGNATURISED"},
+                            {"name": "net_packet_dns_request", "cat": "SIGNATURISED"},
+                            {"name": "net_packet_dns_response", "cat": "SIGNATURISED"},
+                            {"name": "net_packet_http_request", "cat": "SIGNATURISED"},
+                            {"name": "net_packet_http_response", "cat": "SIGNATURISED"},
+                            {"name": "process_vm_readv", "cat": "SIGNATURISED"},
+                            {"name": "process_vm_writev", "cat": "SIGNATURISED"},
+                            {"name": "finit_module", "cat": "SIGNATURISED"},
+                            {"name": "memfd_create", "cat": "SIGNATURISED"},
+                        ]
+                    )
+                data["tracee"]["syscalls"] = json.dumps(data["tracee"]["syscalls_decoded"])
+                data["tracee"]["cats"] = [
+                    "SIGNATURISED",
+                    "kernel",
+                    "fs",
+                    "mm",
+                    "net",
+                    "ipc",
+                    "security",
+                    "drivers",
+                    "io_uring",
+                    "crypto",
+                    "block",
+                ]
             elif category == "network":
                 data = mongo_find_one(
-                    "analysis", {"info.id": int(task_id)}, {category: 1, "info.tlp": 1, "cif": 1, "suricata": 1, "_id": 0}
+                    "analysis",
+                    {"info.id": int(task_id)},
+                    {category: 1, "info.tlp": 1, "cif": 1, "suricata": 1, "pcapng": 1, "_id": 0},
                 )
             else:
                 data = mongo_find_one("analysis", {"info.id": int(task_id)}, {category: 1, "info.tlp": 1, "_id": 0})
@@ -660,6 +753,7 @@ def load_files(request, task_id, category):
             ajax_response["domainlookups"] = {i["domain"]: i["ip"] for i in ajax_response.get("network", {}).get("domains", {})}
             ajax_response["suricata"] = data.get("suricata", {})
             ajax_response["cif"] = data.get("cif", [])
+            ajax_response["pcapng"] = data.get("pcapng", {})
             tls_path = os.path.join(ANALYSIS_BASE_PATH, "analyses", str(task_id), "tlsdump", "tlsdump.log")
             if _path_safe(tls_path):
                 ajax_response["tlskeys_exists"] = _path_safe(tls_path)
@@ -1092,6 +1186,48 @@ def gen_moloch_from_antivirus(virustotal):
 
 @require_safe
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
+def antivirus(request, task_id):
+    if enabledconf["mongodb"]:
+        rtmp = mongo_find_one(
+            "analysis",
+            {"info.id": int(task_id)},
+            {"target.file.virustotal": 1, "url.virustotal": 1, "info.category": 1, "_id": 0},
+            sort=[("_id", -1)],
+        )
+    elif es_as_db:
+        rtmp = es.search(index=get_analysis_index(), query=get_query_by_info_id(task_id), _source=["virustotal", "info.category"])[
+            "hits"
+        ]["hits"]
+        if len(rtmp) == 0:
+            rtmp = None
+        else:
+            rtmp = rtmp[0]["_source"]
+    else:
+        rtmp = None
+    if not rtmp:
+        return render(request, "error.html", {"error": "The specified analysis does not exist"})
+
+    if rtmp.get("target", {}).get("file"):
+        rtmp["virustotal"] = rtmp.get("target", {}).get("file", {}).get("virustotal")
+        del rtmp["target"]["file"]["virustotal"]
+    elif rtmp.get("url", {}).get("virustotal"):
+        rtmp["virustotal"] = rtmp.get("url", {}).get("virustotal")
+        del rtmp["url"]["virustotal"]
+
+    if settings.MOLOCH_ENABLED:
+        if settings.MOLOCH_BASE[-1] != "/":
+            settings.MOLOCH_BASE += "/"
+        if "virustotal" in rtmp:
+            rtmp["virustotal"] = gen_moloch_from_antivirus(rtmp["virustotal"])
+
+    rtmp.setdefault("file", {}).setdefault("virustotal", rtmp["virustotal"])
+    del rtmp["virustotal"]
+
+    return render(request, "analysis/antivirus.html", rtmp)
+
+
+@require_safe
+@conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
 def surialert(request, task_id):
     if enabledconf["mongodb"]:
         report = mongo_find_one("analysis", {"info.id": int(task_id)}, {"suricata.alerts": 1, "_id": 0}, sort=[("_id", -1)])
@@ -1238,34 +1374,6 @@ def surifiles(request, task_id):
         suricata = gen_moloch_from_suri_file_info(suricata)
 
     return render(request, "analysis/surifiles.html", {"analysis": report["suricata"], "config": enabledconf})
-
-
-@require_safe
-@conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
-def antivirus(request, task_id):
-    if enabledconf["mongodb"]:
-        rtmp = mongo_find_one(
-            "analysis", {"info.id": int(task_id)}, {"virustotal": 1, "info.category": 1, "_id": 0}, sort=[("_id", -1)]
-        )
-    elif es_as_db:
-        rtmp = es.search(index=get_analysis_index(), query=get_query_by_info_id(task_id), _source=["virustotal", "info.category"])[
-            "hits"
-        ]["hits"]
-        if len(rtmp) == 0:
-            rtmp = None
-        else:
-            rtmp = rtmp[0]["_source"]
-    else:
-        rtmp = None
-    if not rtmp:
-        return render(request, "error.html", {"error": "The specified analysis does not exist"})
-    if settings.MOLOCH_ENABLED:
-        if settings.MOLOCH_BASE[-1] != "/":
-            settings.MOLOCH_BASE += "/"
-        if "virustotal" in rtmp:
-            rtmp["virustotal"] = gen_moloch_from_antivirus(rtmp["virustotal"])
-
-    return render(request, "analysis/antivirus.html", {"analysis": rtmp})
 
 
 @csrf_exempt
@@ -1595,6 +1703,7 @@ def report(request, task_id):
         request,
         "analysis/report.html",
         {
+            "title": "Analysis Report",
             "analysis": report,
             # ToDo test
             "file": report.get("target", {}).get("file", {}),
@@ -1772,6 +1881,10 @@ def file(request, category, task_id, dlfile):
     elif category in ("pcap", "pcapzip"):
         file_name += ".pcap"
         path = os.path.join(CUCKOO_ROOT, "storage", "analyses", task_id, "dump.pcap")
+        cd = "application/vnd.tcpdump.pcap"
+    elif category == "pcapng":
+        file_name += ".pcapng"
+        path = os.path.join(CUCKOO_ROOT, "storage", "analyses", task_id, "dump.pcapng")
         cd = "application/vnd.tcpdump.pcap"
     elif category == "debugger_log":
         path = os.path.join(CUCKOO_ROOT, "storage", "analyses", task_id, "debugger", str(dlfile) + ".log")
@@ -2073,7 +2186,12 @@ def search(request, searched=""):
             return render(
                 request,
                 "analysis/search.html",
-                {"analyses": None, "term": searched, "error": "Search term too short, minimum 3 characters required"},
+                {
+                    "title": "Search",
+                    "analyses": None,
+                    "term": searched,
+                    "error": "Search term too short, minimum 3 characters required",
+                },
             )
 
         # name:foo or name: foo
@@ -2100,7 +2218,7 @@ def search(request, searched=""):
                 return render(
                     request,
                     "analysis/search.html",
-                    {"analyses": None, "term": searched, "error": "Not all values are integers"},
+                    {"title": "Search", "analyses": None, "term": searched, "error": "Not all values are integers"},
                 )
 
         # Escape forward slash characters
@@ -2116,13 +2234,13 @@ def search(request, searched=""):
                 return render(
                     request,
                     "analysis/search.html",
-                    {"analyses": None, "term": searched, "error": "Invalid search term: %s" % term},
+                    {"title": "Search", "analyses": None, "term": searched, "error": "Invalid search term: %s" % term},
                 )
             else:
                 return render(
                     request,
                     "analysis/search.html",
-                    {"analyses": None, "term": None, "error": "Unable to recognize the search syntax"},
+                    {"title": "Search", "analyses": None, "term": None, "error": "Unable to recognize the search syntax"},
                 )
 
         analyses = []
@@ -2142,6 +2260,7 @@ def search(request, searched=""):
             request,
             "analysis/search.html",
             {
+                "title": "Search Results",
                 "analyses": analyses,
                 "config": enabledconf,
                 "term": searched,
@@ -2150,7 +2269,7 @@ def search(request, searched=""):
                 "value_only": value_only,
             },
         )
-    return render(request, "analysis/search.html", {"analyses": None, "term": None, "error": None})
+    return render(request, "analysis/search.html", {"title": "Search", "analyses": None, "term": None, "error": None})
 
 
 @require_safe
@@ -2351,10 +2470,12 @@ def statistics_data(request, days=7):
             # psycopg2.OperationalError
             print(e)
             return render(
-                request, "error.html", {"error": "Please restart your database. Probably it had an update or it just down"}
+                request,
+                "error.html",
+                {"title": "Statistics", "error": "Please restart your database. Probably it had an update or it just down"},
             )
-        return render(request, "statistics.html", {"statistics": details, "days": days})
-    return render(request, "error.html", {"error": "Provide days as number"})
+        return render(request, "statistics.html", {"title": "Statistics", "statistics": details, "days": days})
+    return render(request, "error.html", {"title": "Statistics", "error": "Provide days as number"})
 
 
 on_demand_config_mapper = {

@@ -1,3 +1,63 @@
+### [04.10.2024]
+* Monitor update: Add GetClassObject hook to handle UAC bypass technique using CMSTPLUA COM object
+* PrivateLoader direct syscall capture
+
+### [01.10.2024]
+* Monitor update: Improve fix for size bug with unpacking embedded PEs
+
+### [26.09.2024] Browser monitoring
+* [Browser extension details](https://github.com/kevoreilly/CAPEv2/tree/master/extra/browser_extension/README.md). For code details see [PR](https://github.com/kevoreilly/CAPEv2/pull/2330)
+
+### [23.09.2024]
+* Monitor update: Fix size bug with unpacking embedded PEs
+* .NET loader 'SlowLoader' detonation shim for slower cpus (race condition)
+
+### [18.09.2024]
+* Monitor updates:
+    * Add disassembled instruction to exception output
+    * VBScript hook improvements (thanks Jeremy at Proofpoint)
+
+### [13.09.2024]
+* Fix issue with sign extension causing 32-bit values to be misrepresented in web ui (e.g. 0xffffffffc000005 for 0xc000005)
+* bytes2str(): if any values in dict type are already str then keep them
+* Expand behavior log process information with image base, image size and bitness
+
+### [10.09.2024]
+* Monitor update: Add capability to dynamically unhook previously hooked functions (unhook-apis option takes colon-separated list e.g. unhook-apis=NtSetInformationThread:NtDelayExecution)
+* Themida detonation shim
+
+### [03.09.2024]
+* Monitor updates:
+    * Add HtaFile to CLSIDS handled in WMI/DCOM (e.g. FormBook) - thanks Will Metcalf
+    * VBScript hooks
+
+### [16.08.2024]
+* TTD integration (Microsoft Time Travel Debugging)
+    * Use submission option ttd=1
+    * Place TTD binaries in analyzer/windows/bin (with wow64 subdirectory for 32-bit)
+    * .trc files output to TTD directory in results folder for manual retrieval
+* Monitor update: Small debugger fix
+
+### [07.08.2024]
+* Monitor update: Set language via lang=X (language code) submission option
+
+### [05.08.2024]
+* SparkRAT config parser - thanks t-mtsmt
+
+### [22.07.2024]
+* Monitor update: Enhancements to software (& syscall) breakpoint mechanism, add handling for Internet Shortcut CLSID (.url)
+
+### [11.07.2024]
+* Monitor updates:
+    * (in)direct syscall handling enhancements
+    * unpacking & scanning: improved entropy checks
+
+### [26.06.2024]
+* Monitor updates: debugger/trace enhancements
+
+### [21.06.2024]
+* Monitor updates: misc enhancements & fixes (see capemon repo for details)
+
 ### [12.06.2024]
 * Monitor update: Unpacker enhancement: capture modified mapped images
 

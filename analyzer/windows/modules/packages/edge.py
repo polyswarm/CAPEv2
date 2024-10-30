@@ -8,6 +8,8 @@ class Edge(Package):
         ("ProgramFiles", "Microsoft", "Edge", "Application", "msedge.exe"),
         ("ProgramFiles(x86)", "Microsoft", "EdgeCore", "*", "msedge.exe"),
     ]
+    summary = "Opens the URL in Microsoft Edge."
+    description = """Uses msedge.exe to open the supplied url."""
 
     def start(self, url):
         edge = self.get_path_glob("msedge.exe")

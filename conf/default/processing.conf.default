@@ -66,6 +66,10 @@ analysis_call_limit = 0
 ram_boost = no
 # https://capev2.readthedocs.io/en/latest/usage/patterns_replacement.html
 replace_patterns = no
+file_activities = no
+
+[tracee]
+enabled = no
 
 [strace]
 enabled = no
@@ -76,6 +80,8 @@ platform = linux
 
 [debug]
 enabled = yes
+# Amount of text (bytes)
+buffer = 8192
 
 [detections]
 enabled = yes
@@ -104,9 +110,6 @@ enabled = no
 enabled = yes
 sort_pcap = no
 # DNS whitelisting to ignore domains/IPs configured in network.py
-# This should be disabled when utilizing InetSim/Remnux as we end up resolving
-# the IP from fakedns which would then remove all domains associated with that
-# resolved IP
 dnswhitelist = yes
 # additional entries
 dnswhitelist_file = extra/whitelist_domains.txt
@@ -122,6 +125,9 @@ country_lookup = no
 # For maxmind use: GeoLite2 Country
 # For ipinfo use: Free IP to Country + IP to ASN
 maxmind_database = data/GeoLite2-Country.mmdb
+
+[pcapng]
+enabled = no
 
 [url_analysis]
 enabled = yes
@@ -144,7 +150,6 @@ definitions = data/trid/triddefs.trd
 [die]
 # Detect it Easy
 enabled = no
-binary = /usr/bin/diec
 
 [virustotal]
 enabled = yes
@@ -315,11 +320,6 @@ key =
 # Community
 [script_log_processing]
 enabled = yes
-
-# Community
-# Dump PE's overlay info
-[overlay]
-enabled = no
 
 # Community
 [floss]
