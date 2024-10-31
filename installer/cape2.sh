@@ -812,8 +812,8 @@ function install_mongo(){
 			systemctl stop mongod.service
 			systemctl disable mongod.service
 			rm /lib/systemd/system/mongod.service
-			rm /lib/systemd/system/mongod.service
-			systemctl daemon-reload
+#			rm /lib/systemd/system/mongod.service
+#			systemctl daemon-reload
 		fi
 
 		if [ ! -f /lib/systemd/system/mongodb.service ]; then
@@ -846,8 +846,8 @@ EOF
 		sudo mkdir -p /data/{config,}db
         sudo chown mongodb:mongodb /data/ -R
 		systemctl unmask mongodb.service
-		systemctl enable mongodb.service
-		systemctl restart mongodb.service
+#		systemctl enable mongodb.service
+#		systemctl restart mongodb.service
 
 		if ! crontab -l | grep -q -F 'delete-unused-file-data-in-mongo'; then
 			crontab -l | { cat; echo "30 1 * * 0 cd /opt/CAPEv2 && sudo -u ${USER} poetry run python ./utils/cleaners.py --delete-unused-file-data-in-mongo"; } | crontab -
