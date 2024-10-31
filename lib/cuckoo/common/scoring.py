@@ -3,10 +3,7 @@ def calc_scoring(results: dict, matched: list):
     status = None
     fileType = results.get("target", {}).get("file", {}).get("type")
 
-    if not fileType:
-        return finalMalscore, status
-
-    if "executable" in fileType:
+    if fileType and "executable" in fileType:
         # We have 5 methodologies
         # 1. The file is Malicious-Known (The sample is detected by YARA)
         ## score 10/10 (Malicious)

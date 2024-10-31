@@ -1,5 +1,5 @@
 #!/bin/bash
-# set -ex
+set -ex
 # By @doomedraven - https://twitter.com/D00m3dR4v3n
 # Copyright (C) 2011-2023 doomedraven.
 # See the file 'LICENSE.md' for copying permission.
@@ -689,10 +689,6 @@ function install_suricata() {
         fi
     fi
 
-    # ToDo this is not the best solution but i don't have time now to investigate proper one
-    sed -i 's|CapabilityBoundingSet=CAP_NET_ADMIN|#CapabilityBoundingSet=CAP_NET_ADMIN|g' /lib/systemd/system/suricata.service
-    systemctl daemon-reload
-
     #change suricata yaml
     sed -i 's|#default-rule-path: /etc/suricata/rules|default-rule-path: /etc/suricata/rules|g' /etc/default/suricata
     sed -i 's|default-rule-path: /var/lib/suricata/rules|default-rule-path: /etc/suricata/rules|g' /etc/suricata/suricata.yaml
@@ -725,7 +721,7 @@ function install_suricata() {
 
     chown ${USER}:${USER} -R /etc/suricata
     chown ${USER}:${USER} -R /var/log/suricata
-    systemctl restart suricata
+#    systemctl restart suricata
 }
 
 function install_yara_x() {
@@ -744,7 +740,7 @@ function install_yara_x() {
 
 function install_yara() {
     echo '[+] Checking for old YARA version to uninstall'
-    dpkg -l|grep "yara-v[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all 2>/dev/null
+    dpkg -l|grep "yara-v[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all || true 2>/dev/null
 
     echo '[+] Installing Yara'
 
@@ -774,7 +770,7 @@ function install_yara() {
     ldconfig
 
     # Run yara installer script
-    sudo -u ${USER} poetry --directory /opt/CAPEv2 run /opt/CAPEv2/extra/yara_installer.sh
+    sudo -u ${USER} bash -c "YARA_PYTHON_GITHUB_SHA=${YARA_PYTHON_GITHUB_SHA} poetry --directory /opt/CAPEv2/ run /opt/CAPEv2/extra/yara_installer.sh"
 
     if [ -d yara-python ]; then
         sudo rm -rf yara-python
@@ -816,8 +812,8 @@ function install_mongo(){
 			systemctl stop mongod.service
 			systemctl disable mongod.service
 			rm /lib/systemd/system/mongod.service
-			rm /lib/systemd/system/mongod.service
-			systemctl daemon-reload
+#			rm /lib/systemd/system/mongod.service
+#			systemctl daemon-reload
 		fi
 
 		if [ ! -f /lib/systemd/system/mongodb.service ]; then
@@ -850,8 +846,8 @@ EOF
 		sudo mkdir -p /data/{config,}db
         sudo chown mongodb:mongodb /data/ -R
 		systemctl unmask mongodb.service
-		systemctl enable mongodb.service
-		systemctl restart mongodb.service
+#		systemctl enable mongodb.service
+#		systemctl restart mongodb.service
 
 		if ! crontab -l | grep -q -F 'delete-unused-file-data-in-mongo'; then
 			crontab -l | { cat; echo "30 1 * * 0 cd /opt/CAPEv2 && sudo -u ${USER} poetry run python ./utils/cleaners.py --delete-unused-file-data-in-mongo"; } | crontab -
@@ -891,8 +887,8 @@ function install_postgresql() {
     sudo systemctl enable postgresql.service
     sudo systemctl start postgresql.service
 
-    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE cape REFRESH COLLATION VERSION;\""
-    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE postgres REFRESH COLLATION VERSION;\""
+#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE cape REFRESH COLLATION VERSION;\""
+#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE postgres REFRESH COLLATION VERSION;\""
 }
 
 function install_capa() {
@@ -916,7 +912,8 @@ function install_capa() {
 function dependencies() {
     echo "[+] Installing dependencies"
 
-    timedatectl set-timezone UTC
+    mkdir -p /etc/apt/keyrings/
+
     export LANGUAGE=en_US.UTF-8
     export LANG=en_US.UTF-8
     export LC_ALL=en_US.UTF-8
@@ -966,15 +963,15 @@ function dependencies() {
 
     install_postgresql
 
-    sudo -u postgres -H sh -c "psql -c \"CREATE USER ${USER} WITH PASSWORD '$PASSWD'\"";
-    sudo -u postgres -H sh -c "psql -c \"CREATE DATABASE ${USER}\"";
-    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"GRANT ALL PRIVILEGES ON DATABASE ${USER} to ${USER};\""
-    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE ${USER} OWNER TO ${USER};\""
+#    sudo -u postgres -H sh -c "psql -c \"CREATE USER ${USER} WITH PASSWORD '$PASSWD'\"";
+#    sudo -u postgres -H sh -c "psql -c \"CREATE DATABASE ${USER}\"";
+#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"GRANT ALL PRIVILEGES ON DATABASE ${USER} to ${USER};\""
+#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE ${USER} OWNER TO ${USER};\""
 
     apt-get install apparmor-utils -y
     TCPDUMP_PATH=`which tcpdump`
-    aa-complain ${TCPDUMP_PATH}
-    aa-disable ${TCPDUMP_PATH}
+#    aa-complain ${TCPDUMP_PATH}
+#    aa-disable ${TCPDUMP_PATH}
 
     if id "${USER}" &>/dev/null; then
         echo "user ${USER} already exist"
@@ -1019,8 +1016,8 @@ HashedControlPassword 16:D14CC89AD7848B8C60093105E8284A2D3AB2CF3C20D95FECA0848CF
 EOF
 
     #Then restart Tor:
-    sudo systemctl enable tor
-    sudo systemctl start tor
+#    sudo systemctl enable tor
+#    sudo systemctl start tor
 
     #Edit the Privoxy configuration
     #sudo sed -i 's/R#        forward-socks5t             /     127.0.0.1:9050 ./        forward-socks5t             /     127.0.0.1:9050 ./g' /etc/privoxy/config
@@ -1067,8 +1064,8 @@ EOF
         echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
     fi
 
-    sudo modprobe br_netfilter
-    sudo sysctl -p
+#    sudo modprobe br_netfilter
+#    sudo sysctl -p
 
     ### PDNS
     sudo apt-get install git binutils-dev libldns-dev libpcap-dev libdate-simple-perl libdatetime-perl libdbd-mysql-perl -y
@@ -1230,9 +1227,9 @@ function install_CAPE() {
 
     cd /opt || return
     # if folder CAPEv2 dosn't exist, clone it
-    if [ ! -d CAPEv2 ]; then
-        git clone https://github.com/kevoreilly/CAPEv2/
-    fi
+#    if [ ! -d CAPEv2 ]; then
+#        git clone https://github.com/kevoreilly/CAPEv2/
+#    fi
     chown ${USER}:${USER} -R /opt/CAPEv2/
     #chown -R root:${USER} /usr/var/malheur/
     #chmod -R =rwX,g=rwX,o=X /usr/var/malheur/
@@ -1241,14 +1238,14 @@ function install_CAPE() {
     sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; CRYPTOGRAPHY_DONT_BUILD_RUST=1 poetry install'
 
     if [ "$DISABLE_LIBVIRT" -eq 0 ]; then
-        sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry run extra/libvirt_installer.sh'
+        sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry run /opt/CAPEv2/extra/libvirt_installer.sh'
         sudo usermod -aG kvm ${USER}
         sudo usermod -aG libvirt ${USER}
     fi
 
     #packages are needed for build options in extra/yara_installer.sh
     apt-get install libjansson-dev libmagic1 libmagic-dev -y
-    sudo -u ${USER} bash -c 'poetry run /opt/CAPEv2/extra/yara_installer.sh'
+    sudo -u ${USER} bash -c "YARA_PYTHON_GITHUB_SHA=${YARA_PYTHON_GITHUB_SHA} poetry run /opt/CAPEv2/extra/yara_installer.sh"
 
     if [ -d /tmp/yara-python ]; then
         sudo rm -rf /tmp/yara-python
@@ -1265,26 +1262,28 @@ function install_CAPE() {
 
     chown ${USER}:${USER} -R "/opt/CAPEv2/"
 
-	if [ "$MONGO_ENABLE" -ge 1 ]; then
-		crudini --set conf/reporting.conf mongodb enabled yes
-	fi
+    if [ "$MONGO_ENABLE" -ge 1 ]; then
+      crudini --set conf/reporting.conf mongodb enabled yes
+    fi
 
-	if [ "$librenms_enable" -ge 1 ]; then
-		crudini --set conf/reporting.conf litereport enabled yes
-		crudini --set conf/reporting.conf runstatistics enabled yes
-	fi
+    if [ "$librenms_enable" -ge 1 ]; then
+      crudini --set conf/reporting.conf litereport enabled yes
+      crudini --set conf/reporting.conf runstatistics enabled yes
+    fi
 
-    python3 utils/community.py -waf -cr
+    python3 utils/community.py -waf -cr --url "https://github.com/polyswarm/CAPESandbox-community/archive/${CAPE_SANDBOX_COMMUNITY_SHA}.tar.gz"
 
     # Configure direct internet connection
     sudo echo "400 ${INTERNET_IFACE}" >> /etc/iproute2/rt_tables
 
-if [ ! -f /etc/sudoers.d/cape ]; then
-    cat >> /etc/sudoers.d/cape << EOF
+    if [ ! -f /etc/sudoers.d/cape ]; then
+        cat >> /etc/sudoers.d/cape << EOF
 Cmnd_Alias CAPE_SERVICES = /usr/bin/systemctl restart cape-rooter, /usr/bin/systemctl restart cape-processor, /usr/bin/systemctl restart cape, /usr/bin/systemctl restart cape-web, /usr/bin/systemctl restart cape-dist, /usr/bin/systemctl restart cape-fstab, /usr/bin/systemctl restart suricata, /usr/bin/systemctl restart guac-web, /usr/bin/systemctl restart guacd
 ${USER} ALL=(ALL) NOPASSWD:CAPE_SERVICES
 EOF
-fi
+    fi
+
+    sed -i 's/security_driver = "apparmor"/security_driver = "none"/g' /etc/libvirt/qemu.conf
 }
 
 function install_systemd() {
@@ -1294,37 +1293,37 @@ function install_systemd() {
     cp /opt/CAPEv2/systemd/cape-web.service /lib/systemd/system/cape-web.service
     cp /opt/CAPEv2/systemd/cape-rooter.service /lib/systemd/system/cape-rooter.service
     cp /opt/CAPEv2/systemd/suricata.service /lib/systemd/system/suricata.service
-    systemctl daemon-reload
-	cape_web_enable_string=''
-	if [ "$MONGO_ENABLE" -ge 1 ]; then
-		cape_web_enable_string="cape-web"
-	fi
-
-    systemctl enable cape cape-rooter cape-processor "$cape_web_enable_string" suricata
-    systemctl restart cape cape-rooter cape-processor "$cape_web_enable_string" suricata
-
-    if [ ! -f "/etc/sudoers.d/cape" ] ; then
-        cat > /etc/sudoers.d/cape << EOF
-Cmnd_Alias CAPE_SVC = /usr/bin/systemctl stop cape, /usr/bin/systemctl start cape, /usr/bin/systemctl restart cape
-Cmnd_Alias CAPE_WEB_SVC = /usr/bin/systemctl stop cape-web, /usr/bin/systemctl start cape-web, /usr/bin/systemctl restart cape-web
-Cmnd_Alias CAPE_PROCESSING_SVC = /usr/bin/systemctl stop cape-processor, /usr/bin/systemctl start cape-processor, /usr/bin/systemctl restart cape-processor
-Cmnd_Alias CAPE_ROOTER_SVC = /usr/bin/systemctl stop cape-rooter, /usr/bin/systemctl start cape-rooter, /usr/bin/systemctl restart cape-rooter
-Cmnd_Alias SURICATA = /usr/bin/systemctl stop suricata, /usr/bin/systemctl start suricata, /usr/bin/systemctl restart suricata
-Cmnd_Alias UWSGI = /usr/bin/systemctl stop uwsgi, /usr/bin/systemctl start uwsgi, /usr/bin/systemctl restart uwsgi
-
-# disttributed cape related
-Cmnd_Alias CAPE_FSTAB_SVC = /usr/bin/systemctl stop cape-fstab, /usr/bin/systemctl start cape-fstab, /usr/bin/systemctl restart cape-fstab
-
-%${USER} ALL=CAPE_SVC
-%${USER} ALL=CAPE_WEB_SVC
-%${USER} ALL=CAPE_PROCESSING_SVC
-%${USER} ALL=CAPE_ROOTER_SVC
-%${USER} ALL=SURICATA
-%${USER} ALL=UWSGI
-
-%cape ALL=CAPE_FSTAB_SVC
-EOF
-    fi
+#    systemctl daemon-reload
+#	cape_web_enable_string=''
+#	if [ "$MONGO_ENABLE" -ge 1 ]; then
+#		cape_web_enable_string="cape-web"
+#	fi
+#
+#    systemctl enable cape cape-rooter cape-processor "$cape_web_enable_string" suricata
+#    systemctl restart cape cape-rooter cape-processor "$cape_web_enable_string" suricata
+#
+#    if [ ! -f "/etc/sudoers.d/cape" ] ; then
+#        cat > /etc/sudoers.d/cape << EOF
+#Cmnd_Alias CAPE_SVC = /usr/bin/systemctl stop cape, /usr/bin/systemctl start cape, /usr/bin/systemctl restart cape
+#Cmnd_Alias CAPE_WEB_SVC = /usr/bin/systemctl stop cape-web, /usr/bin/systemctl start cape-web, /usr/bin/systemctl restart cape-web
+#Cmnd_Alias CAPE_PROCESSING_SVC = /usr/bin/systemctl stop cape-processor, /usr/bin/systemctl start cape-processor, /usr/bin/systemctl restart cape-processor
+#Cmnd_Alias CAPE_ROOTER_SVC = /usr/bin/systemctl stop cape-rooter, /usr/bin/systemctl start cape-rooter, /usr/bin/systemctl restart cape-rooter
+#Cmnd_Alias SURICATA = /usr/bin/systemctl stop suricata, /usr/bin/systemctl start suricata, /usr/bin/systemctl restart suricata
+#Cmnd_Alias UWSGI = /usr/bin/systemctl stop uwsgi, /usr/bin/systemctl start uwsgi, /usr/bin/systemctl restart uwsgi
+#
+## disttributed cape related
+#Cmnd_Alias CAPE_FSTAB_SVC = /usr/bin/systemctl stop cape-fstab, /usr/bin/systemctl start cape-fstab, /usr/bin/systemctl restart cape-fstab
+#
+#%${USER} ALL=CAPE_SVC
+#%${USER} ALL=CAPE_WEB_SVC
+#%${USER} ALL=CAPE_PROCESSING_SVC
+#%${USER} ALL=CAPE_ROOTER_SVC
+#%${USER} ALL=SURICATA
+#%${USER} ALL=UWSGI
+#
+#%cape ALL=CAPE_FSTAB_SVC
+#EOF
+#    fi
 }
 
 
@@ -1358,8 +1357,8 @@ function install_node_exporter() {
 function install_volatility3() {
     echo "[+] Installing volatility3"
     sudo apt-get install unzip
-    sudo -u ${USER} poetry run pip3 install git+https://github.com/volatilityfoundation/volatility3
-    vol_path=$(sudo -u ${USER} poetry run python3 -c "import volatility3.plugins;print(volatility3.__file__.replace('__init__.py', 'symbols/'))")
+    sudo -u ${USER} poetry --directory /opt/CAPEv2/ run pip3 install git+https://github.com/volatilityfoundation/volatility3
+    vol_path=$(sudo -u ${USER} poetry --directory /opt/CAPEv2/ run python3 -c "import volatility3.plugins;print(volatility3.__file__.replace('__init__.py', 'symbols/'))")
     cd $vol_path || return
     wget https://downloads.volatilityfoundation.org/volatility3/symbols/windows.zip -O windows.zip
     unzip -o windows.zip
