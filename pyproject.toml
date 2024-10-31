@@ -32,6 +32,9 @@ SFlock2 = {version = "0.3.66", extras = ["shellcode","linux"]}
 # XLMMacroDeobfuscator = "0.2.7"
 pyzipper = "0.3.5"
 flare-capa = "7.3.0"
+# we must not install the 0.9.0 since it is failing to install in ubuntu 22.04
+# this is a flare-capa dependency, remove this if necessary in the future
+python-flirt = "!=0.9.0"
 Cython = "0.29.24"
 # pyre2 = "0.3.6" # Dead for python3.11
 Django = "4.2.16"
