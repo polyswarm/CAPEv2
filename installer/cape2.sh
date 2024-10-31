@@ -770,7 +770,7 @@ function install_yara() {
     ldconfig
 
     # Run yara installer script
-    sudo -u ${USER} poetry --directory /opt/CAPEv2 run /opt/CAPEv2/extra/yara_installer.sh
+    sudo -u ${USER} bash -c "YARA_PYTHON_GITHUB_SHA=${YARA_PYTHON_GITHUB_SHA} poetry --directory /opt/CAPEv2/ run /opt/CAPEv2/extra/yara_installer.sh"
 
     if [ -d yara-python ]; then
         sudo rm -rf yara-python
@@ -1235,7 +1235,6 @@ function install_CAPE() {
     #chmod -R =rwX,g=rwX,o=X /usr/var/malheur/
     # Adapting owner permissions to the ${USER} path folder
     cd "/opt/CAPEv2/" || return
-    sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry run extra/conflicting_dependencies.sh'
     sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; CRYPTOGRAPHY_DONT_BUILD_RUST=1 poetry install'
 
     if [ "$DISABLE_LIBVIRT" -eq 0 ]; then
