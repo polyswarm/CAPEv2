@@ -738,6 +738,8 @@ function install_virt_manager() {
         echo "[+] Cloned Virt Manager repo"
     fi
     cd "virt-manager" || return
+    pwd
+    ls
     # py3
     #pip3 install .
     python3 setup.py build
