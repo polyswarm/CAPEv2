@@ -738,7 +738,7 @@ function install_virt_manager() {
         echo "[+] Cloned Virt Manager repo"
     fi
     cd "virt-manager" || return
-    git checkout v4.1.0
+    git checkout ${VIRT_MANAGER_GIT_SHA}
     # py3
     #pip3 install .
     python3 setup.py build
