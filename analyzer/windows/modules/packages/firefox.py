@@ -10,6 +10,7 @@ class Firefox(Package):
 
     PATHS = [
         ("ProgramFiles", "Mozilla Firefox", "firefox.exe"),
+        ("ProgramFiles(x86)", "Mozilla Firefox", "firefox.exe")
     ]
     summary = "Opens the URL in firefox."
     description = """Uses firefox.exe to open the supplied url."""
