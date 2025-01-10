@@ -735,7 +735,7 @@ function install_yara_x() {
     sudo -u ${USER} git clone https://github.com/VirusTotal/yara-x
     cd yara-x || return
     sudo -u ${USER} bash -c 'source "$HOME/.cargo/env" ; cargo install --path cli'
-    poetry --directory /opt/CAPEv2/ run pip install yara-x
+    poetry --project /opt/CAPEv2/ run pip install yara-x
 }
 
 function install_yara() {
@@ -770,7 +770,7 @@ function install_yara() {
     ldconfig
 
     # Run yara installer script
-    sudo -u ${USER} bash -c "YARA_PYTHON_GITHUB_SHA=${YARA_PYTHON_GITHUB_SHA} poetry --directory /opt/CAPEv2/ run /opt/CAPEv2/extra/yara_installer.sh"
+    sudo -u ${USER} bash -c "YARA_PYTHON_GITHUB_SHA=${YARA_PYTHON_GITHUB_SHA} poetry --project /opt/CAPEv2/ run /opt/CAPEv2/extra/yara_installer.sh"
 
     if [ -d yara-python ]; then
         sudo rm -rf yara-python
@@ -902,7 +902,7 @@ function install_capa() {
     cd capa || return
     git pull
     git submodule update --init rules
-    poetry --directory /opt/CAPEv2/ run pip install .
+    poetry --project /opt/CAPEv2/ run pip install .
     cd /opt/CAPEv2
     if [ -d /tmp/capa ]; then
         sudo rm -rf /tmp/capa
@@ -1082,8 +1082,8 @@ EOF
     make -j"$(getconf _NPROCESSORS_ONLN)"
     sudo checkinstall -D --pkgname=passivedns --default
     chown ${USER}:${USER} -R /tmp/passivedns/
-    sudo -u ${USER} bash -c 'poetry --directory /opt/CAPEv2/ run pip install unicorn capstone'
-    sudo -u ${USER} bash -c 'cd /tmp/passivedns/ ; poetry --directory /opt/CAPEv2/ run pip install unicorn capstone'
+    sudo -u ${USER} bash -c 'poetry --project /opt/CAPEv2/ run pip install unicorn capstone'
+    sudo -u ${USER} bash -c 'cd /tmp/passivedns/ ; poetry --project /opt/CAPEv2/ run pip install unicorn capstone'
     sed -i 's/APT::Periodic::Unattended-Upgrade "1";/APT::Periodic::Unattended-Upgrade "0";/g' /etc/apt/apt.conf.d/20auto-upgrades
 
     if [ -d /tmp/passivedns ]; then
@@ -1357,8 +1357,8 @@ function install_node_exporter() {
 function install_volatility3() {
     echo "[+] Installing volatility3"
     sudo apt-get install unzip
-    sudo -u ${USER} poetry --directory /opt/CAPEv2/ run pip3 install git+https://github.com/volatilityfoundation/volatility3
-    vol_path=$(sudo -u ${USER} poetry --directory /opt/CAPEv2/ run python3 -c "import volatility3.plugins;print(volatility3.__file__.replace('__init__.py', 'symbols/'))")
+    sudo -u ${USER} poetry --project /opt/CAPEv2/ run pip3 install git+https://github.com/volatilityfoundation/volatility3
+    vol_path=$(sudo -u ${USER} poetry --project /opt/CAPEv2/ run python3 -c "import volatility3.plugins;print(volatility3.__file__.replace('__init__.py', 'symbols/'))")
     cd $vol_path || return
     wget https://downloads.volatilityfoundation.org/volatility3/symbols/windows.zip -O windows.zip
     unzip -o windows.zip
@@ -1547,7 +1547,7 @@ case "$COMMAND" in
     fi
     # Update FLARE CAPA rules once per day
     if ! crontab -l | grep -q 'community.py -waf -cr'; then
-        crontab -l | { cat; echo "5 0 */1 * * cd /opt/CAPEv2/utils/ && sudo -u ${USER} poetry --directory /opt/CAPEv2/ run python3 community.py -waf -cr && poetry --directory /opt/CAPEv2/ run pip install -U flare-capa && systemctl restart cape-processor 2>/dev/null"; } | crontab -
+        crontab -l | { cat; echo "5 0 */1 * * cd /opt/CAPEv2/utils/ && sudo -u ${USER} poetry --project /opt/CAPEv2/ run python3 community.py -waf -cr && poetry --project /opt/CAPEv2/ run pip install -U flare-capa && systemctl restart cape-processor 2>/dev/null"; } | crontab -
     fi
 	install_librenms
 	if [ "$clamav_enable" -ge 1 ]; then

@@ -11,8 +11,8 @@ fi
 cd /tmp/yara-python
 git checkout ${YARA_PYTHON_GITHUB_SHA}
 
-poetry --directory /opt/CAPEv2 run python setup.py build --enable-cuckoo --enable-magic --enable-profiling
-poetry --directory /opt/CAPEv2 run pip install .
+poetry --project /opt/CAPEv2 run python setup.py build --enable-cuckoo --enable-magic --enable-profiling
+poetry --project /opt/CAPEv2 run pip install .
 
 cd ..
 
