@@ -10,8 +10,8 @@ fi
 
 cd /tmp/yara-python
 
-/etc/poetry/bin/poetry --directory /opt/CAPEv2 run python setup.py build --enable-cuckoo --enable-magic --enable-profiling
-/etc/poetry/bin/poetry --directory /opt/CAPEv2 run pip install .
+/etc/poetry/bin/poetry --project /opt/CAPEv2 run python setup.py build --enable-cuckoo --enable-magic --enable-profiling
+/etc/poetry/bin/poetry --project /opt/CAPEv2 run pip install .
 
 cd ..
 
