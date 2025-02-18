@@ -2313,15 +2313,6 @@ files = [
     {file = "Pebble-4.6.3.tar.gz", hash = "sha256:694e1105db888f3576b8f00662f90b057cf3780e6f8b7f57955a568008d0f497"},
 ]
 
-[[package]]
-name = "peepdf"
-version = "0.4.2"
-description = ""
-optional = false
-python-versions = "*"
-files = []
-develop = false
-
 [package.dependencies]
 colorama = ">=0.3.7"
 future = ">=0.16.0"
@@ -2329,12 +2320,6 @@ jsbeautifier = "1.6.2"
 Pillow = ">=3.2.0"
 pycryptodome = "3.14.1"
 pythonaes = "1.0"
-
-[package.source]
-type = "git"
-url = "https://github.com/CAPESandbox/peepdf"
-reference = "master"
-resolved_reference = "cd92f8fd96104c472a39bd831cdbee520f767622"
 
 [[package]]
 name = "pefile"
