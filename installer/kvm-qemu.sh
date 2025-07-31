@@ -280,14 +280,14 @@ function install_libguestfs() {
         git checkout ${LIBGUESTFS_GITHUB_SHA}
         cd ..
 #        git clone --depth=1 --single-branch --recursive --no-recurse-submodules git://git.annexia.org/ocaml-augeas.git
-        wget -O - https://people.redhat.com/~rjones/augeas/files/ocaml-augeas-0.6.tar.gz | tar -xz
-        cd ocaml-augeas-0.6
+        wget -O - https://download.libguestfs.org/ocaml-augeas/ocaml-augeas-0.7.tar.gz | tar -xz
+        cd ocaml-augeas-0.7
         autoreconf --install
         ./configure
         make
         make install
         cd ..
-        rm -rf ocaml-augeas-0.6
+        rm -rf ocaml-augeas-0.7
     fi
     cd libguestfs || return
     git submodule update --init
