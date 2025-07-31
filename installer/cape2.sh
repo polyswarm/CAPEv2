@@ -1,10 +1,13 @@
 #!/bin/bash
-set -ex
+# set -ex
 # By @doomedraven - https://twitter.com/D00m3dR4v3n
 # Copyright (C) 2011-2023 doomedraven.
 # See the file 'LICENSE.md' for copying permission.
 
 # Huge thanks to: @NaxoneZ @kevoreilly @ENZOK @wmetcalf @ClaudioWayne
+
+# Ensure non-interactive mode for apt commands globally to prevent prompts during automated installations
+export DEBIAN_FRONTEND=noninteractive
 
 # Static values
 # Where to place everything
@@ -20,10 +23,12 @@ PASSWD="SuperPuperSecret"
 DIST_MASTER_IP="192.168.1.1"
 USER="cape"
 # https://nginx.org/en/linux_packages.html
-nginx_version=1.25.3
+nginx_version=1.27.3
 prometheus_version=2.20.1
 grafana_version=7.1.5
 node_exporter_version=1.0.1
+# https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v$CSNB_VERSION/crowdsec-nginx-bouncer.tgz
+CSNB_VERSION="1.0.8"
 # if set to 1, enables snmpd and other various bits to support
 # monitoring via LibreNMS
 librenms_enable=0
@@ -53,13 +58,13 @@ librenms_megaraid_enable=0
 # disabling this will result in the web interface being disabled
 MONGO_ENABLE=1
 
-DIE_VERSION="3.09"
+DIE_VERSION="3.10"
 
 TOR_SOCKET_TIMEOUT="60"
 
 # if a config file is present, read it in
 if [ -f "./cape-config.sh" ]; then
-	. ./cape-config.sh
+    . ./cape-config.sh
 fi
 
 UBUNTU_VERSION=$(lsb_release -rs)
@@ -69,21 +74,7 @@ ARCH="$(dpkg --print-architecture)"
 
 function issues() {
 cat << EOI
-Problems with PyOpenSSL?
-    sudo rm -rf /usr/local/lib/python3.8/dist-packages/OpenSSL/
-    sudo rm -rf /home/${USER}/.local/lib/python3.8/site-packages/OpenSSL/
-    sudo apt-get install --reinstall python-openssl
-
-Problem with PIP?
-    sudo python -m pip3 uninstall pip3 && sudo apt-get install python3-pip --reinstall
-
-Problem with pillow:
-    * ValueError: jpeg is required unless explicitly disabled using --disable-jpeg, aborting
-    * ValueError: zlib is required unless explicitly disabled using --disable-zlib, aborting
-Solution:
-    # https://askubuntu.com/a/1094768
-    # you may need to adjust version of libjpeg-turbo8
-    sudo apt-get install zlib1g-dev libjpeg-turbo8-dev libjpeg-turbo8=1.5.2-0ubuntu5
+    No known problems yet
 EOI
 }
 
@@ -143,166 +134,167 @@ EndOfHelp
 
 function install_crowdsecurity() {
     echo "[+] Install crowdsecurity"
-    sudo apt-get install bash gettext whiptail curl wget
+    sudo apt-get install -y bash gettext whiptail curl wget
     cd /tmp || return
     if [ ! -d crowdsec-release.tgz ]; then
         curl -s https://api.github.com/repos/crowdsecurity/crowdsec/releases/latest | grep browser_download_url| cut -d '"' -f 4  | wget -i -
     fi
     tar xvzf crowdsec-release.tgz
+    # ToDo fix this
     directory=$(ls | grep "crowdsec-v*")
     cd "$directory" || return
     sudo ./wizard.sh -i
     sudo cscli collections install crowdsecurity/nginx
     sudo systemctl reload crowdsec
-    install_docker
-    sudo cscli dashboard setup -l 127.0.0.1 -p 8448
+    # install_docker
+    # sudo cscli dashboard setup -l 127.0.0.1 -p 8448
 
-    wget https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v0.0.4/cs-nginx-bouncer.tgz
-    tar xvzf cs-nginx-bouncer.tgz
-    directory=$(ls | grep "cs-nginx-bouncer*")
-    cd "$directory" || return
+    if [ ! -f crowdsec-nginx-bouncer-v$CSNB_VERSION ]; then
+        wget https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v$CSNB_VERSION/crowdsec-nginx-bouncer.tgz
+        tar xvzf crowdsec-nginx-bouncer.tgz
+    fi
+    cd crowdsec-nginx-bouncer-v$CSNB_VERSION || return
     sudo ./install.sh
 }
 
 function install_docker() {
     echo "[+] Install docker"
     # https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-20-04
-    sudo apt-get install apt-transport-https ca-certificates curl software-properties-common
+    sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
 
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes
     echo "deb [signed-by=/etc/apt/keyrings/docker.gpg arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
 
     sudo apt-get update
-    sudo apt-get install docker-ce
+    sudo apt-get install -y docker-ce
     sudo usermod -aG docker ${USER}
 }
 
 function install_jemalloc() {
-
     # https://zapier.com/engineering/celery-python-jemalloc/
     if ! $(dpkg -l "libjemalloc*" | grep -q "ii  libjemalloc"); then
-        apt-get install -f checkinstall curl build-essential jq autoconf libjemalloc-dev -y
+        sudo apt-get install -y libjemalloc-dev
     fi
 }
 
 function librenms_cron_config() {
-	echo '*/5 * * * * root /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /usr/local/bin/sneck -u 2> /dev/null > /dev/null'
-	echo '*/5 * * * * root /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /etc/snmp/extends/cape | /usr/local/bin/librenms_return_optimizer 2> /dev/null > /var/cache/cape.cache'
-	echo '*/5 * * * * root /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /etc/snmp/extends/smart -u'
-	echo '*/5 * * * * root /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /usr/local/bin/hv_monitor -c 2> /dev/null > /var/cache/hv_monitor.cache'
-	echo '*/5 * * * * root /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /etc/snmp/extends/osupdate 2> /dev/null > /var/cache/osupdate.extend'
-	echo '1 1 * * * root /bin/cat /sys/devices/virtual/dmi/id/board_serial > /etc/snmp/serial'
+    echo '*/5 * * * * root /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /usr/local/bin/sneck -u 2> /dev/null > /dev/null'
+    echo '*/5 * * * * root /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /etc/snmp/extends/cape | /usr/local/bin/librenms_return_optimizer 2> /dev/null > /var/cache/cape.cache'
+    echo '*/5 * * * * root /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /etc/snmp/extends/smart -u'
+    echo '*/5 * * * * root /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /usr/local/bin/hv_monitor -c 2> /dev/null > /var/cache/hv_monitor.cache'
+    echo '*/5 * * * * root /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /etc/snmp/extends/osupdate 2> /dev/null > /var/cache/osupdate.extend'
+    echo '1 1 * * * root /bin/cat /sys/devices/virtual/dmi/id/board_serial > /etc/snmp/serial'
 }
 
 function librenms_sneck_config() {
-	if [ "$librenms_ipmi" -ge 1 ]; then
-		echo 'ipmi_sensor|/usr/lib/nagios/plugins/check_ipmi_sensor --nosel'
-	else
-		echo '#ipmi_sensor|/usr/lib/nagios/plugins/check_ipmi_sensor --nosel'
-	fi
-	echo 'virtqemud_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "^/usr/sbin/virtqemud" 1:1'
-	echo 'cape_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "poetry.*bin/python cuckoo.py" 1:1'
-	echo 'cape_processor_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "poetry.*bin/python process.py" 1:'
-	echo 'cape_rooter_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "poetry.*bin/python rooter.py" 1'
-	if [ "$clamav_enable" -ge 1 ]; then
-		echo "clamav|/usr/lib/nagios/plugins/check_clamav -w $librenms_clamav_warn -c $librenms_clamav_crit"
-	else
-		echo "#clamav|/usr/lib/nagios/plugins/check_clamav -w $librenms_clamav_warn -c $librenms_clamav_crit"
-	fi
-	if [ "$MONGO_ENABLE" -ge 1 ]; then
-		echo "mongodb|/usr/lib/nagios/plugins/check_mongodb.py $librenms_mongo_args"
-		echo 'cape_web_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "poetry.*bin/python manage.py" 1:'
-	else
-		echo "#mongodb|/usr/lib/nagios/plugins/check_mongodb.py $librenms_mongo_args"
-		echo 'cape_web_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "poetry.*bin/python manage.py" 0'
-	fi
+    if [ "$librenms_ipmi" -ge 1 ]; then
+        echo 'ipmi_sensor|/usr/lib/nagios/plugins/check_ipmi_sensor --nosel'
+    else
+        echo '#ipmi_sensor|/usr/lib/nagios/plugins/check_ipmi_sensor --nosel'
+    fi
+    echo 'virtqemud_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "^/usr/sbin/virtqemud" 1:1'
+    echo 'cape_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "poetry.*bin/python cuckoo.py" 1:1'
+    echo 'cape_processor_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "poetry.*bin/python process.py" 1:'
+    echo 'cape_rooter_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "poetry.*bin/python rooter.py" 1'
+    if [ "$clamav_enable" -ge 1 ]; then
+        echo "clamav|/usr/lib/nagios/plugins/check_clamav -w $librenms_clamav_warn -c $librenms_clamav_crit"
+    else
+        echo "#clamav|/usr/lib/nagios/plugins/check_clamav -w $librenms_clamav_warn -c $librenms_clamav_crit"
+    fi
+    if [ "$MONGO_ENABLE" -ge 1 ]; then
+        echo "mongodb|/usr/lib/nagios/plugins/check_mongodb.py $librenms_mongo_args"
+        echo 'cape_web_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "poetry.*bin/python manage.py" 1:'
+    else
+        echo "#mongodb|/usr/lib/nagios/plugins/check_mongodb.py $librenms_mongo_args"
+        echo 'cape_web_procs|/usr/lib/nagios/plugins/check_procs --ereg-argument-array "poetry.*bin/python manage.py" 0'
+    fi
 }
 
 function librenms_snmpd_config() {
-	echo "rocommunity $snmp_community"
-	echo
-	echo "syslocation $snmp_location"
-	echo "syscontact $snmp_contact"
-	echo
-	if [ "$librenms_megaraid_enable" -ge 1 ]; then
-		echo "pass .1.3.6.1.4.1.3582 /usr/sbin/lsi_mrdsnmpmain"
-	else
-		echo  "#pass .1.3.6.1.4.1.3582 /usr/sbin/lsi_mrdsnmpmain"
-	fi
-	echo
-	echo 'extend distro /etc/snmp/extends/distro'
-	echo "extend hardware '/bin/cat /sys/devices/virtual/dmi/id/product_name'"
-	echo "extend manufacturer '/bin/cat /sys/devices/virtual/dmi/id/sys_vendor'"
-	echo "extend serial '/bin/cat /etc/snmp/serial'"
-	echo
-	echo "extend cape /bin/cat /var/cache/cape.cache"
-	echo "extend smart /bin/cat /var/cache/smart"
-	echo "extend sneck /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /usr/local/bin/sneck -c -b"
-	echo "extend hv-monitor /bin/cat /var/cache/hv_monitor.cache"
-	echo "extend osupdate /bin/cat /var/cache/osupdate.extend"
-	if [ "$librenms_mdadm_enable" -ge 1 ]; then
-		echo "extend mdadm /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /etc/snmp/extends/mdadm"
-	else
-		echo "#extend mdadm /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /etc/snmp/extends/mdadm"
-	fi
-	echo
-	if [ ! -z "$snmp_agentaddress" ]; then
-		echo "agentaddress $snmp_agentaddress"
-	fi
+    echo "rocommunity $snmp_community"
+    echo
+    echo "syslocation $snmp_location"
+    echo "syscontact $snmp_contact"
+    echo
+    if [ "$librenms_megaraid_enable" -ge 1 ]; then
+        echo "pass .1.3.6.1.4.1.3582 /usr/sbin/lsi_mrdsnmpmain"
+    else
+        echo  "#pass .1.3.6.1.4.1.3582 /usr/sbin/lsi_mrdsnmpmain"
+    fi
+    echo
+    echo 'extend distro /etc/snmp/extends/distro'
+    echo "extend hardware '/bin/cat /sys/devices/virtual/dmi/id/product_name'"
+    echo "extend manufacturer '/bin/cat /sys/devices/virtual/dmi/id/sys_vendor'"
+    echo "extend serial '/bin/cat /etc/snmp/serial'"
+    echo
+    echo "extend cape /bin/cat /var/cache/cape.cache"
+    echo "extend smart /bin/cat /var/cache/smart"
+    echo "extend sneck /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /usr/local/bin/sneck -c -b"
+    echo "extend hv-monitor /bin/cat /var/cache/hv_monitor.cache"
+    echo "extend osupdate /bin/cat /var/cache/osupdate.extend"
+    if [ "$librenms_mdadm_enable" -ge 1 ]; then
+        echo "extend mdadm /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /etc/snmp/extends/mdadm"
+    else
+        echo "#extend mdadm /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /etc/snmp/extends/mdadm"
+    fi
+    echo
+    if [ ! -z "$snmp_agentaddress" ]; then
+        echo "agentaddress $snmp_agentaddress"
+    fi
 }
 
 function install_librenms() {
-    echo "[+] Install librenms"
-	if [ "$librenms_enable" -ge 1 ]; then
-		echo "Enabling stuff for LibreNMS"
-		apt-get install -y zlib1g-dev cpanminus libjson-perl libfile-readbackwards-perl \
-				libjson-perl libconfig-tiny-perl libdbi-perl libfile-slurp-perl \
-				libstatistics-lite-perl libdbi-perl libdbd-pg-perl monitoring-plugins \
-				monitoring-plugins-contrib monitoring-plugins-standard dmidecode wget snmpd
-		cpanm HV::Monitor Monitoring::Sneck
-		mkdir -p /etc/snmp/extends
-		wget https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/distro -O /etc/snmp/extends/distro
-		wget https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/cape -O /etc/snmp/extends/cape
-		wget https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/smart -O /etc/snmp/extends/smart
-		wget https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/osupdate -O /etc/snmp/extends/osupdate
-		chmod +x /etc/snmp/extends/distro /etc/snmp/extends/cape  /etc/snmp/extends/smart /etc/snmp/extends/osupdate
+    if [ "$librenms_enable" -ge 1 ]; then
+        echo "[+] Install librenms"
+        echo "Enabling stuff for LibreNMS"
+        sudo apt-get install -y zlib1g-dev cpanminus libjson-perl libfile-readbackwards-perl \
+                libjson-perl libconfig-tiny-perl libdbi-perl libfile-slurp-perl \
+                libstatistics-lite-perl libdbi-perl libdbd-pg-perl monitoring-plugins \
+                monitoring-plugins-contrib monitoring-plugins-standard dmidecode wget snmpd
+        cpanm HV::Monitor Monitoring::Sneck
+        mkdir -p /etc/snmp/extends
+        wget https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/distro -O /etc/snmp/extends/distro
+        wget https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/cape -O /etc/snmp/extends/cape
+        wget https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/smart -O /etc/snmp/extends/smart
+        wget https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/osupdate -O /etc/snmp/extends/osupdate
+        chmod +x /etc/snmp/extends/distro /etc/snmp/extends/cape  /etc/snmp/extends/smart /etc/snmp/extends/osupdate
 
-		if [ "$librenms_mdadm_enable" -ge 1 ]; then
-			apt-get install -y jq
-			wget https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/mdadm -O /etc/snmp/extends/mdadm
-			chmod +x /etc/snmp/extends/mdadm
-		fi
+        if [ "$librenms_mdadm_enable" -ge 1 ]; then
+            sudo apt-get install -y jq
+            wget https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/mdadm -O /etc/snmp/extends/mdadm
+            chmod +x /etc/snmp/extends/mdadm
+        fi
 
-		/etc/snmp/extends/smart -g > /etc/snmp/extends/smart.config
-		echo "You will want to check /etc/snmp/extends/smart.config to see if it looks good."
-		echo "See /etc/snmp/extends/smart for more info"
+        /etc/snmp/extends/smart -g > /etc/snmp/extends/smart.config
+        echo "You will want to check /etc/snmp/extends/smart.config to see if it looks good."
+        echo "See /etc/snmp/extends/smart for more info"
 
-		cat /sys/devices/virtual/dmi/id/board_serial > /etc/snmp/serial
+        cat /sys/devices/virtual/dmi/id/board_serial > /etc/snmp/serial
 
-		librenms_sneck_config > /usr/local/etc/sneck.conf
-		librenms_cron_config > /etc/cron.d/librenms_auto
-		librenms_snmpd_config > /etc/snmp/snmpd.conf
+        librenms_sneck_config > /usr/local/etc/sneck.conf
+        librenms_cron_config > /etc/cron.d/librenms_auto
+        librenms_snmpd_config > /etc/snmp/snmpd.conf
 
-		systemctl enable snmpd.service
-		systemctl restart snmpd.service
-		systemctl restart cron.service
-	else
-		echo "Skipping stuff for LibreNMS"
-	fi
+        systemctl enable snmpd.service
+        systemctl restart snmpd.service
+        systemctl restart cron.service
+    else
+        echo "Skipping stuff for LibreNMS"
+    fi
 }
 
 function install_modsecurity() {
     echo "[+] Install modsecurity"
     # Tested on nginx 1.(16|18).X Based on https://www.nginx.com/blog/compiling-and-installing-modsecurity-for-open-source-nginx/ with fixes
-    apt-get install -y apt-utils autoconf automake build-essential git libcurl4-openssl-dev libgeoip-dev liblmdb-dev libpcre++-dev libtool libxml2-dev libyajl-dev pkgconf wget zlib1g-dev
-    git clone --depth 1 -b v3/master --single-branch https://github.com/SpiderLabs/ModSecurity
+    sudo apt-get install -y git g++ apt-utils autoconf automake build-essential libcurl4-openssl-dev libgeoip-dev liblmdb-dev libpcre2-dev libtool libxml2-dev libyajl-dev pkgconf zlib1g-dev
+    git clone --depth 500 -b v3/master --single-branch https://github.com/SpiderLabs/ModSecurity
     cd ModSecurity || return
     git submodule init
     git submodule update
     ./build.sh
-    ./configure
+    ./configure --with-pcre2
     make -j"$(nproc)"
-    checkinstall -D --pkgname="ModSecurity" --default
+    make install
 
     cd .. || return
     git clone --depth 1 https://github.com/SpiderLabs/ModSecurity-nginx.git
@@ -318,6 +310,12 @@ function install_modsecurity() {
     cd nginx-"$nginx_version" || return
     ./configure --with-compat --add-dynamic-module=../ModSecurity-nginx
     make modules
+    mkdir -p /usr/lib/nginx/modules
+    mkdir -p /usr/share/nginx/modules
+    mkdir -p /var/lib/nginx/body
+    mkdir -p /etc/nginx/cert
+
+    cp objs/ngx_http_modsecurity_module.so /usr/lib/nginx/modules/ngx_http_modsecurity_module.so
     cp objs/ngx_http_modsecurity_module.so /usr/share/nginx/modules/ngx_http_modsecurity_module.so
     cd .. || return
 
@@ -328,16 +326,15 @@ function install_modsecurity() {
     sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/nginx/modsec/modsecurity.conf
     echo 'Include "/etc/nginx/modsec/modsecurity.conf"' >/etc/nginx/modsec/main.conf
 
+    # ToDo
     echo '''
-
-    1. Add next line to the top of /etc/nginx/nginx.conf
-        * load_module modules/ngx_http_modsecurity_module.so;
-    2. Add next 2 rules to enabled-site under server section
+    1. Add next 2 rules to enabled-site under server section
         modsecurity on;
         modsecurity_rules_file /etc/nginx/modsec/main.conf;
     '''
 
 }
+
 
 function install_nginx() {
     echo "[+] Install nginx"
@@ -348,15 +345,20 @@ function install_nginx() {
         tar xzvf nginx-$nginx_version.tar.gz
     fi
 
-    # PCRE version 8.42
-    wget https://ftp.exim.org/pub/pcre/pcre-8.45.tar.gz && tar xzvf pcre-8.45.tar.gz
+    PCRE_VERSION="10.37"
+    OPENSSL_VERSION="3.4.0"
+    ZLIB_VERSION="1.3.1"
+    if [ ! -d pcre2-$PCRE_VERSION ]; then
+        wget https://ftp.exim.org/pub/pcre/pcre2-$PCRE_VERSION.tar.gz  && tar xzvf pcre2-$PCRE_VERSION.tar.gz
+    fi
 
-    # zlib version 1.2.11
-    wget https://www.zlib.net/zlib-1.3.tar.gz && tar xzvf zlib-1.3.tar.gz
+    if [ ! -d zlib-1.3.1]; then
+        wget https://www.zlib.net/zlib-$ZLIB_VERSION.tar.gz && tar xzvf zlib-$ZLIB_VERSION.tar.gz
+    fi
 
-    # OpenSSL version 3.2.0
-    wget https://www.openssl.org/source/openssl-3.2.0.tar.gz && tar xzvf openssl-3.2.0.tar.gz
-
+    if [ ! -d openssl-$OPENSSL_VERSION ]; then
+        wget https://www.openssl.org/source/openssl-$OPENSSL_VERSION.tar.gz && tar xzvf openssl-$OPENSSL_VERSION.tar.gz
+    fi
     sudo add-apt-repository -y ppa:maxmind/ppa
     sudo apt-get update && sudo apt-get upgrade -y
     sudo apt-get install -y perl libperl-dev libgd3 libgd-dev libgeoip1 libgeoip-dev geoip-bin libxml2 libxml2-dev libxslt1.1 libxslt1-dev
@@ -364,6 +366,7 @@ function install_nginx() {
     cd nginx-$nginx_version || return
 
     sudo cp man/nginx.8 /usr/share/man/man8
+    # ToDo auto confirmation of overwrite
     sudo gzip /usr/share/man/man8/nginx.8
     ls /usr/share/man/man8/ | grep nginx.8.gz
 
@@ -383,14 +386,14 @@ function install_nginx() {
                 --http-proxy-temp-path=/var/lib/nginx/proxy \
                 --http-scgi-temp-path=/var/lib/nginx/scgi \
                 --http-uwsgi-temp-path=/var/lib/nginx/uwsgi \
-                --with-openssl=../openssl-3.2.0 \
+                --with-openssl=../openssl-$OPENSSL_VERSION \
                 --with-openssl-opt=enable-ec_nistp_64_gcc_128 \
                 --with-openssl-opt=no-nextprotoneg \
                 --with-openssl-opt=no-weak-ssl-ciphers \
                 --with-openssl-opt=no-ssl3 \
-                --with-pcre=../pcre-8.45 \
+                --with-pcre=../pcre2-$PCRE_VERSION \
                 --with-pcre-jit \
-                --with-zlib=../zlib-1.3 \
+                --with-zlib=../zlib-$ZLIB_VERSION \
                 --with-compat \
                 --with-file-aio \
                 --with-threads \
@@ -434,10 +437,26 @@ function install_nginx() {
     sudo adduser --system --home /nonexistent --shell /bin/false --no-create-home --disabled-login --disabled-password --gecos "nginx user" --group nginx
 
     install_modsecurity
+    mkdir -p /var/lib/nginx/body
+    mkdir -p /etc/nginx/cert
+
+    sudo openssl dhparam -out /etc/nginx/cert/dhparam.pem 2048
 
     sudo mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/fastcgi_temp /var/cache/nginx/proxy_temp /var/cache/nginx/scgi_temp /var/cache/nginx/uwsgi_temp
     sudo chmod 700 /var/cache/nginx/*
     sudo chown nginx:root /var/cache/nginx/*
+
+    sudo mkdir -p /etc/nginx/bots.d
+    sudo wget https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/conf.d/globalblacklist.conf -O /etc/nginx/conf.d/globalblacklist.conf
+    sudo wget https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/bots.d/blockbots.conf -O /etc/nginx/bots.d/blockbots.conf
+    sudo wget https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/bots.d/ddos.conf -O /etc/nginx/bots.d/ddos.conf
+    sudo wget https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/bots.d/whitelist-ips.conf -O /etc/nginx/bots.d/whitelist-ips.conf
+    sudo wget https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/bots.d/whitelist-domains.conf -O /etc/nginx/bots.d/whitelist-domains.conf
+    sudo wget https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/bots.d/blacklist-user-agents.conf -O /etc/nginx/bots.d/blacklist-user-agents.conf
+    sudo wget https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/bots.d/custom-bad-referrers.conf -O /etc/nginx/bots.d/custom-bad-referrers.conf
+    sudo wget https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/bots.d/blacklist-ips.conf -O /etc/nginx/bots.d/blacklist-ips.conf
+    sudo wget https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/bots.d/bad-referrer-words.conf -O /etc/nginx/bots.d/bad-referrer-words.conf
+
 
     if [ ! -f /lib/systemd/system/nginx.service ]; then
         cat >> /lib/systemd/system/nginx.service << EOF
@@ -459,6 +478,9 @@ ExecStop=/bin/kill -s TERM $MAINPID
 WantedBy=multi-user.target
 EOF
     fi
+
+    cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf_backup
+    sed -i '1 i\load_module modules/ngx_http_modsecurity_module.so;' /etc/nginx/nginx.conf
 
     sudo systemctl enable nginx.service
     sudo systemctl start nginx.service
@@ -501,7 +523,7 @@ server {
 }
 
 server {
-     if ($http_user_agent = "") {
+    if ($http_user_agent = "") {
         return 444;
     }
     # SSL configuration
@@ -569,16 +591,17 @@ fi
 
 function install_letsencrypt(){
     echo "[+] Install and configure letsencrypt"
-    sudo add-apt-repository ppa:certbot/certbot -y
-    sudo apt-get update
-    sudo apt-get install python3-certbot-nginx -y
+    sudo apt-get install -y python3 python3-venv libaugeas0
+    sudo pip install certbot certbot-nginx --break-system-packages
     echo "server_name $1 www.$1;" > /etc/nginx/sites-available/"$1"
+    sudo ln -s /opt/certbot/bin/certbot /usr/bin/certbot
     sudo certbot --nginx -d "$1" -d www."$1"
+
 }
 
 function install_fail2ban() {
     echo "[+] Installing fail2ban"
-    sudo apt-get install fail2ban -y
+    sudo apt-get install -y fail2ban
     sudo cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
     sudo sed -i /etc/fail2ban/jail.local
     systemctl start fail2ban
@@ -622,8 +645,8 @@ function redsocks2() {
 
 function distributed() {
     echo "[+] Configure distributed configuration"
-    sudo apt-get install uwsgi uwsgi-plugin-python3 nginx -y 2>/dev/null
-    sudo -u ${USER} bash -c 'poetry run pip install flask flask-restful flask-sqlalchemy requests'
+    sudo apt-get install -y uwsgi uwsgi-plugin-python3 nginx 2>/dev/null
+    sudo -u ${USER} bash -c '/etc/poetry/bin/poetry run pip install flask flask-restful flask-sqlalchemy requests'
 
     sudo cp /opt/CAPEv2/uwsgi/capedist.ini /etc/uwsgi/apps-available/cape_dist.ini
     sudo ln -s /etc/uwsgi/apps-available/cape_dist.ini /etc/uwsgi/apps-enabled
@@ -667,27 +690,51 @@ EOL
 
 function install_suricata() {
     echo '[+] Installing Suricata'
-    add-apt-repository ppa:oisf/suricata-stable -y
-    apt-get install suricata suricata-update -y
+    sudo add-apt-repository -y ppa:oisf/suricata-stable
+    sudo apt-get -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-overwrite" install -y suricata
     touch /etc/suricata/threshold.config
 
     # Download etupdate to update Emerging Threats Open IDS rules:
     mkdir -p "/etc/suricata/rules"
     if ! crontab -l | grep -q -F '15 * * * * /usr/bin/suricata-update'; then
-        crontab -l | { cat; echo "15 * * * * /usr/bin/suricata-update --suricata /usr/bin/suricata --suricata-conf /etc/suricata/suricata.yaml -o /etc/suricata/rules/ && /usr/bin/suricatasc -c reload-rules /tmp/suricata-command.socket &>/dev/null"; } | crontab -
+        crontab -l | { cat; echo "15 * * * * /usr/bin/suricata-update --suricata /usr/bin/suricata --suricata-conf /etc/suricata/suricata.yaml -o /etc/suricata/rules/ &>/dev/null"; } | crontab -
     fi
     if [ -d /usr/share/suricata/rules/ ]; then
-        # copy files if rules folder contains files
+        # copy files if rules folder contains files
         if [ "$(ls -A /var/lib/suricata/rules/)" ]; then
             cp "/usr/share/suricata/rules/"* "/etc/suricata/rules/"
         fi
     fi
     if [ -d /var/lib/suricata/rules/ ]; then
-        # copy files if rules folder contains files
+        # copy files if rules folder contains files
         if [ "$(ls -A /var/lib/suricata/rules/)" ]; then
             cp "/var/lib/suricata/rules/"* "/etc/suricata/rules/"
         fi
     fi
+
+    cat > /etc/suricata/cape.yaml <<EOF
+%YAML 1.1
+---
+
+default-rule-path: /etc/suricata/rules
+rule-files: suricata.rules
+mpm-algo: hs
+stream.reassembly.depth: 0
+stream.checksum-validation:  none
+netmap.checksum-checks: no
+pcap-file.checksum-checks: no
+app-layer.protocols.http.libhtp.default-config.request-body-limit: 0
+app-layer.protocols.http.libhtp.default-config.response-body-limit: 0
+app-layer.protocols.tls.ja3-fingerprints: yes
+
+vars.address-groups.EXTERNAL_NET: "ANY"
+# pid-file: /run/suricata.pid
+# https://forum.suricata.io/t/suricata-service-crashes-with-pthread-create-is-11-error-when-processing-pcap-with-capev2/3870/5
+security.limit-noproc: false
+
+outputs.1.eve-log.enabled: yes
+file-store.enabled: yes
+EOF
 
     #change suricata yaml
     sed -i 's|#default-rule-path: /etc/suricata/rules|default-rule-path: /etc/suricata/rules|g' /etc/default/suricata
@@ -710,18 +757,28 @@ function install_suricata() {
     sed -i 's/#checksum-validation: none/checksum-validation: none/g' /etc/suricata/suricata.yaml
     sed -i 's/checksum-checks: auto/checksum-checks: no/g' /etc/suricata/suricata.yaml
 
-    # https://forum.suricata.io/t/suricata-service-crashes-with-pthread-create-is-11-error-when-processing-pcap-with-capev2/3870/5
-    sed -i 's|limit-noproc: true|limit-noproc: false|g' /etc/suricata/suricata.yaml
+vars.address-groups.EXTERNAL_NET: "ANY"
+# pid-file: /run/suricata.pid
+# https://forum.suricata.io/t/suricata-service-crashes-with-pthread-create-is-11-error-when-processing-pcap-with-capev2/3870/5
+security.limit-noproc: false
 
-    # enable eve-log
-    python3 -c "pa = '/etc/suricata/suricata.yaml';q=open(pa, 'rb').read().replace(b'eve-log:\n      enabled: no\n', b'eve-log:\n      enabled: yes\n');open(pa, 'wb').write(q);"
-    python3 -c "pa = '/etc/suricata/suricata.yaml';q=open(pa, 'rb').read().replace(b'unix-command:\n  enabled: auto\n  #filename: custom.socket', b'unix-command:\n  enabled: yes\n  filename: /tmp/suricata-command.socket');open(pa, 'wb').write(q);"
-    # file-store
-    python3 -c "pa = '/etc/suricata/suricata.yaml';q=open(pa, 'rb').read().replace(b'file-store:\n  version: 2\n  enabled: no', b'file-store:\n  version: 2\n  enabled: yes');open(pa, 'wb').write(q);"
+outputs.1.eve-log.enabled: yes
+file-store.enabled: yes
+EOF
+
+    sed -i '$a include:\n  - cape.yaml\n' /etc/suricata/suricata.yaml
+    usermod -aG pcap suricata
+    usermod -aG suricata "${USER}"
 
     chown ${USER}:${USER} -R /etc/suricata
     chown ${USER}:${USER} -R /var/log/suricata
-#    systemctl restart suricata
+    systemctl restart suricata
+
+    # How to verify config options
+    # suricata --dump-config
+    # sudo suricata -T -c /etc/suricata/suricata.yaml
+    # echo "Important: For this change to take effect, you must log out and then log back in, or open a new shell with newgrp suricata."
+
 }
 
 function install_yara_x() {
@@ -735,16 +792,16 @@ function install_yara_x() {
     sudo -u ${USER} git clone https://github.com/VirusTotal/yara-x
     cd yara-x || return
     sudo -u ${USER} bash -c 'source "$HOME/.cargo/env" ; cargo install --path cli'
-    poetry --directory /opt/CAPEv2/ run pip install yara-x
+    /etc/poetry/bin/poetry --directory /opt/CAPEv2/ run pip install yara-x
 }
 
 function install_yara() {
     echo '[+] Checking for old YARA version to uninstall'
-    dpkg -l|grep "yara-v[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all || true 2>/dev/null
+    dpkg -l|grep "yara-v[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all 2>/dev/null
 
     echo '[+] Installing Yara'
 
-    apt-get install libtool libjansson-dev libmagic1 libmagic-dev jq autoconf libyara-dev -y
+    sudo apt-get install -y libtool libjansson-dev libmagic1 libmagic-dev jq autoconf libyara-dev
 
     cd /tmp || return
     yara_info=$(curl -s https://api.github.com/repos/VirusTotal/yara/releases/latest)
@@ -779,9 +836,9 @@ function install_yara() {
 }
 
 function install_mongo(){
-	if [ "$MONGO_ENABLE" -ge 1 ]; then
-		echo "[+] Installing MongoDB"
-		# Mongo >=5 requires CPU AVX instruction support https://www.mongodb.com/docs/manual/administration/production-notes/#x86_64
+    if [ "$MONGO_ENABLE" -ge 1 ]; then
+        echo "[+] Installing MongoDB"
+        # Mongo >=5 requires CPU AVX instruction support https://www.mongodb.com/docs/manual/administration/production-notes/#x86_64
 
         MONGO_VERSION="8.0"
         if ! grep -q ' avx ' /proc/cpuinfo; then
@@ -791,34 +848,41 @@ function install_mongo(){
             fi
         fi
 
-		sudo curl -fsSL "https://pgp.mongodb.com/server-${MONGO_VERSION}.asc" | sudo gpg --dearmor -o /etc/apt/keyrings/mongo.gpg --yes
-		echo "deb [signed-by=/etc/apt/keyrings/mongo.gpg arch=amd64] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/${MONGO_VERSION} multiverse" > /etc/apt/sources.list.d/mongodb.list
+        sudo curl -fsSL "https://pgp.mongodb.com/server-${MONGO_VERSION}.asc" | sudo gpg --dearmor -o /etc/apt/keyrings/mongo.gpg --yes
+        echo "deb [signed-by=/etc/apt/keyrings/mongo.gpg arch=amd64] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/${MONGO_VERSION} multiverse" > /etc/apt/sources.list.d/mongodb.list
 
-		apt-get update 2>/dev/null
-		apt-get install libpcre3-dev numactl cron -y
-		apt-get install -y mongodb-org
-		pip3 install pymongo -U --break-system-packages
+        sudo apt-get update 2>/dev/null
+        sudo apt-get install -y libpcre3-dev numactl cron
+        sudo apt-get install -y mongodb-org
 
-		apt-get install -y ntp
-		systemctl start ntp.service && sudo systemctl enable ntp.service
+        # Check pip version. Only pip3 versions 23+ have the '--break-system-packages' flag.
+        PIP_VERSION=$(pip3 -V | awk '{print $2}' | cut -d'.' -f1)
+        if [ "$PIP_VERSION" -ge 23 ]; then
+            pip3 install pymongo -U --break-system-packages
+        else
+            pip3 install pymongo -U
+        fi
 
-		if ! grep -q -E '^kernel/mm/transparent_hugepage/enabled' /etc/sysfs.conf; then
-			sudo apt-get install sysfsutils -y
-			echo "kernel/mm/transparent_hugepage/enabled = never" >> /etc/sysfs.conf
-			echo "kernel/mm/transparent_hugepage/defrag = never" >> /etc/sysfs.conf
-		fi
+        sudo apt-get install -y ntp
+        systemctl start ntp.service && sudo systemctl enable ntp.service
 
-		if [ -f /lib/systemd/system/mongod.service ]; then
-			systemctl stop mongod.service
-			systemctl disable mongod.service
-			rm /lib/systemd/system/mongod.service
-#			rm /lib/systemd/system/mongod.service
-#			systemctl daemon-reload
-		fi
+        if ! grep -q -E '^kernel/mm/transparent_hugepage/enabled' /etc/sysfs.conf; then
+            sudo apt-get install -y sysfsutils
+            echo "kernel/mm/transparent_hugepage/enabled = never" >> /etc/sysfs.conf
+            echo "kernel/mm/transparent_hugepage/defrag = never" >> /etc/sysfs.conf
+        fi
 
-		if [ ! -f /lib/systemd/system/mongodb.service ]; then
-			crontab -l | { cat; echo "@reboot /bin/mkdir -p /data/configdb && /bin/mkdir -p /data/db && /bin/chown mongodb:mongodb /data -R"; } | crontab -
-			cat >> /lib/systemd/system/mongodb.service <<EOF
+        if [ -f /lib/systemd/system/mongod.service ]; then
+            systemctl stop mongod.service
+            systemctl disable mongod.service
+            rm /lib/systemd/system/mongod.service
+#            rm /lib/systemd/system/mongod.service
+#            systemctl daemon-reload
+        fi
+
+        if [ ! -f /lib/systemd/system/mongodb.service ]; then
+            crontab -l | { cat; echo "@reboot /bin/mkdir -p /data/configdb && /bin/mkdir -p /data/db && /bin/chown mongodb:mongodb /data -R"; } | crontab -
+            cat >> /lib/systemd/system/mongodb.service <<EOF
 [Unit]
 Description=High-performance, schema-free document-oriented database
 Wants=network.target
@@ -842,21 +906,21 @@ LimitNOFILE=1048576
 [Install]
 WantedBy=multi-user.target
 EOF
-		fi
-		sudo mkdir -p /data/{config,}db
+        fi
+        sudo mkdir -p /data/{config,}db
         sudo chown mongodb:mongodb /data/ -R
-		systemctl unmask mongodb.service
-#		systemctl enable mongodb.service
-#		systemctl restart mongodb.service
+        systemctl unmask mongodb.service
+#        systemctl enable mongodb.service
+#        systemctl restart mongodb.service
 
-		if ! crontab -l | grep -q -F 'delete-unused-file-data-in-mongo'; then
-			crontab -l | { cat; echo "30 1 * * 0 cd /opt/CAPEv2 && sudo -u ${USER} poetry run python ./utils/cleaners.py --delete-unused-file-data-in-mongo"; } | crontab -
-		fi
+        if ! crontab -l | grep -q -F 'delete-unused-file-data-in-mongo'; then
+            crontab -l | { cat; echo "30 1 * * 0 cd /opt/CAPEv2 && sudo -u ${USER} /etc/poetry/bin/poetry run python ./utils/cleaners.py --delete-unused-file-data-in-mongo"; } | crontab -
+        fi
 
-		echo "https://www.percona.com/blog/2016/08/12/tuning-linux-for-mongodb/"
-	else
-		echo "[+] Skipping MongoDB"
-	fi
+        echo "https://www.percona.com/blog/2016/08/12/tuning-linux-for-mongodb/"
+    else
+        echo "[+] Skipping MongoDB"
+    fi
 
 }
 
@@ -870,8 +934,16 @@ function install_elastic() {
     # Elasticsearch 8.x
     # echo "deb [signed-by=/etc/apt/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/8.x/apt stable main" > /etc/apt/sources.list.d/elastic-8.x.list
 
-    apt-get update && apt-get install elasticsearch
-    pip3 install elasticsearch --break-system-packages
+    sudo apt-get update && sudo apt-get install -y elasticsearch
+
+    # Check pip version. Only pip3 versions 23+ have the '--break-system-packages' flag.
+    PIP_VERSION=$(pip3 -V | awk '{print $2}' | cut -d'.' -f1)
+    if [ "$PIP_VERSION" -ge 23 ]; then
+        pip3 install elasticsearch --break-system-packages
+    else
+        pip3 install elasticsearch
+    fi
+
     systemctl enable elasticsearch
 }
 
@@ -881,14 +953,14 @@ function install_postgresql() {
     curl https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/apt.postgresql.org.gpg >/dev/null
     echo "deb [signed-by=/etc/apt/trusted.gpg.d/apt.postgresql.org.gpg arch=amd64] http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
 
-    sudo apt-get update -y
-    sudo apt -y install libpq-dev postgresql postgresql-client
+    sudo apt-get update
+    sudo apt-get install -y libpq-dev postgresql postgresql-client
 
     sudo systemctl enable postgresql.service
     sudo systemctl start postgresql.service
 
-#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE cape REFRESH COLLATION VERSION;\""
-#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE postgres REFRESH COLLATION VERSION;\""
+    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE cape REFRESH COLLATION VERSION;\""
+    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE postgres REFRESH COLLATION VERSION;\""
 }
 
 function install_capa() {
@@ -902,7 +974,7 @@ function install_capa() {
     cd capa || return
     git pull
     git submodule update --init rules
-    poetry --directory /opt/CAPEv2/ run pip install .
+    /etc/poetry/bin/poetry --directory /opt/CAPEv2/ run pip install /tmp/capa
     cd /opt/CAPEv2
     if [ -d /tmp/capa ]; then
         sudo rm -rf /tmp/capa
@@ -912,8 +984,7 @@ function install_capa() {
 function dependencies() {
     echo "[+] Installing dependencies"
 
-    mkdir -p /etc/apt/keyrings/
-
+    timedatectl set-timezone UTC
     export LANGUAGE=en_US.UTF-8
     export LANG=en_US.UTF-8
     export LC_ALL=en_US.UTF-8
@@ -922,19 +993,25 @@ function dependencies() {
     #sudo canonical-livepatch enable APITOKEN
 
     # deps
-    apt-get install python3-pip build-essential libssl-dev libssl3 python3-dev cmake nfs-common -y
-    apt-get install innoextract msitools iptables psmisc jq sqlite3 tmux net-tools checkinstall graphviz python3-pydot git numactl python3 python3-dev python3-pip libjpeg-dev zlib1g-dev -y
-    apt-get install zpaq upx-ucl wget zip unzip p7zip-full lzip rar unrar unace-nonfree cabextract geoip-database libgeoip-dev libjpeg-dev mono-utils ssdeep libfuzzy-dev exiftool -y
-    apt-get install uthash-dev libconfig-dev libarchive-dev libtool autoconf automake privoxy software-properties-common wkhtmltopdf xvfb xfonts-100dpi tcpdump libcap2-bin wireshark-common -y
-    apt-get install python3-pil subversion uwsgi uwsgi-plugin-python3 python3-pyelftools git curl -y
-    apt-get install openvpn wireguard -y
-    apt-get install crudini -y
+    sudo apt-get install -y python3-pip build-essential libssl-dev libssl3 python3-dev cmake nfs-common crudini
+    sudo apt-get install -y innoextract msitools iptables psmisc jq sqlite3 tmux net-tools checkinstall graphviz python3-pydot git numactl python3 python3-dev python3-pip libjpeg-dev zlib1g-dev
+    sudo apt-get install -y zpaq upx-ucl wget zip unzip lzip rar unrar unace-nonfree cabextract geoip-database libgeoip-dev libjpeg-dev mono-utils ssdeep libfuzzy-dev exiftool
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y uthash-dev libconfig-dev libarchive-dev libtool autoconf automake privoxy software-properties-common wkhtmltopdf xvfb xfonts-100dpi tcpdump libcap2-bin wireshark-common
+    sudo apt-get install -y python3-pil subversion uwsgi uwsgi-plugin-python3 python3-pyelftools git curl
+    sudo apt-get install -y openvpn wireguard
+    # for bingraph
+    sudo apt-get install -y libgraphviz-dev
+
     # APT poetry is ultra outdated
-    curl -sSL https://install.python-poetry.org | python3 -
-    apt-get install locate # used by extra/libvirt_installer.sh
+    curl -sSL https://install.python-poetry.org | POETRY_HOME=/etc/poetry python3 -
+    echo "PATH=$PATH:/etc/poetry/bin/" >> /etc/bash.bashrc
+    source /etc/bash.bashrc
+    poetry self add poetry-plugin-shell
+
+    sudo apt-get install -y locate # used by extra/libvirt_installer.sh
 
     # de4dot selfextraction
-    apt-get install -y libgdiplus libdnlib2.1-cil libgif7 libmono-accessibility4.0-cil libmono-ldap4.0-cil libmono-posix4.0-cil libmono-sqlite4.0-cil libmono-system-componentmodel-dataannotations4.0-cil libmono-system-data4.0-cil libmono-system-design4.0-cil libmono-system-drawing4.0-cil libmono-system-enterpriseservices4.0-cil libmono-system-ldap4.0-cil libmono-system-runtime-serialization-formatters-soap4.0-cil libmono-system-runtime4.0-cil libmono-system-transactions4.0-cil libmono-system-web-applicationservices4.0-cil libmono-system-web-services4.0-cil libmono-system-web4.0-cil libmono-system-windows-forms4.0-cil libmono-webbrowser4.0-cil
+    sudo apt-get install -y libgdiplus libdnlib2.1-cil libgif7 libmono-accessibility4.0-cil libmono-ldap4.0-cil libmono-posix4.0-cil libmono-sqlite4.0-cil libmono-system-componentmodel-dataannotations4.0-cil libmono-system-data4.0-cil libmono-system-design4.0-cil libmono-system-drawing4.0-cil libmono-system-enterpriseservices4.0-cil libmono-system-ldap4.0-cil libmono-system-runtime-serialization-formatters-soap4.0-cil libmono-system-runtime4.0-cil libmono-system-transactions4.0-cil libmono-system-web-applicationservices4.0-cil libmono-system-web-services4.0-cil libmono-system-web4.0-cil libmono-system-windows-forms4.0-cil libmono-webbrowser4.0-cil
     de4dot_package_name="de4dot_3.1.41592.3405-2_all.deb"
     # if not exist download package
     if [ ! -f $de4dot_package_name ]; then
@@ -948,7 +1025,7 @@ function dependencies() {
         return
     fi
 
-    # if broken sudo python -m pip uninstall pip && sudo apt-get install python-pip --reinstall
+    # if broken sudo python -m pip uninstall pip && sudo apt-get install -y --reinstall python-pip
     #pip3 install --upgrade pip
     # /usr/bin/pip
     # from pip import __main__
@@ -956,22 +1033,22 @@ function dependencies() {
     #     sys.exit(__main__._main())
 
     # re2 - dead on py3.11
-    # apt-get install libre2-dev -y
+    # sudo apt-get install -y libre2-dev
     #re2 for py3
     # pip3 install cython
     # pip3 install git+https://github.com/andreasvc/pyre2.git
 
     install_postgresql
 
-#    sudo -u postgres -H sh -c "psql -c \"CREATE USER ${USER} WITH PASSWORD '$PASSWD'\"";
-#    sudo -u postgres -H sh -c "psql -c \"CREATE DATABASE ${USER}\"";
-#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"GRANT ALL PRIVILEGES ON DATABASE ${USER} to ${USER};\""
-#    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE ${USER} OWNER TO ${USER};\""
+    sudo -u postgres -H sh -c "psql -c \"CREATE USER ${USER} WITH PASSWORD '$PASSWD'\"";
+    sudo -u postgres -H sh -c "psql -c \"CREATE DATABASE ${USER}\"";
+    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"GRANT ALL PRIVILEGES ON DATABASE ${USER} to ${USER};\""
+    sudo -u postgres -H sh -c "psql -d \"${USER}\" -c \"ALTER DATABASE ${USER} OWNER TO ${USER};\""
 
-    apt-get install apparmor-utils -y
+    sudo apt-get install -y apparmor-utils
     TCPDUMP_PATH=`which tcpdump`
-#    aa-complain ${TCPDUMP_PATH}
-#    aa-disable ${TCPDUMP_PATH}
+    aa-complain ${TCPDUMP_PATH}
+    aa-disable ${TCPDUMP_PATH}
 
     if id "${USER}" &>/dev/null; then
         echo "user ${USER} already exist"
@@ -986,7 +1063,7 @@ function dependencies() {
     usermod -a -G systemd-journal ${USER}
 
     # https://www.torproject.org/docs/debian.html.en
-    sudo apt-get install gnupg2 -y
+    sudo apt-get install -y gnupg2
 
     wget -qO- https://deb.torproject.org/torproject.org/A3C4F0F979CAA22CDBA8F512EE8CBC9E886DDD89.asc | gpg --dearmor | sudo tee /usr/share/keyrings/deb.torproject.org-keyring.gpg >/dev/null
 
@@ -1002,7 +1079,7 @@ function dependencies() {
 
     sudo apt-get update 2>/dev/null
     sudo systemctl stop tor@default.service && sudo systemctl disable tor@default.service
-    apt-get install tor deb.torproject.org-keyring libzstd1 -y
+    sudo apt-get install -y tor deb.torproject.org-keyring libzstd1
 
     sed -i 's/#RunAsDaemon 1/RunAsDaemon 1/g' /etc/tor/torrc
 
@@ -1016,8 +1093,8 @@ HashedControlPassword 16:D14CC89AD7848B8C60093105E8284A2D3AB2CF3C20D95FECA0848CF
 EOF
 
     #Then restart Tor:
-#    sudo systemctl enable tor
-#    sudo systemctl start tor
+    sudo systemctl enable tor
+    sudo systemctl start tor
 
     #Edit the Privoxy configuration
     #sudo sed -i 's/R#        forward-socks5t             /     127.0.0.1:9050 ./        forward-socks5t             /     127.0.0.1:9050 ./g' /etc/privoxy/config
@@ -1064,37 +1141,13 @@ EOF
         echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
     fi
 
-#    sudo modprobe br_netfilter
-#    sudo sysctl -p
-
-    ### PDNS
-    sudo apt-get install git binutils-dev libldns-dev libpcap-dev libdate-simple-perl libdatetime-perl libdbd-mysql-perl -y
-    cd /tmp || return
-
-    # From pevious install
-    if [ -d /tmp/passivedns ]; then
-        sudo rm -rf /tmp/passivedns
-    fi
-    git clone https://github.com/gamelinux/passivedns.git
-    cd passivedns/ || return
-    autoreconf --install
-    ./configure
-    make -j"$(getconf _NPROCESSORS_ONLN)"
-    sudo checkinstall -D --pkgname=passivedns --default
-    chown ${USER}:${USER} -R /tmp/passivedns/
-    sudo -u ${USER} bash -c 'poetry --directory /opt/CAPEv2/ run pip install unicorn capstone'
-    sudo -u ${USER} bash -c 'cd /tmp/passivedns/ ; poetry --directory /opt/CAPEv2/ run pip install unicorn capstone'
-    sed -i 's/APT::Periodic::Unattended-Upgrade "1";/APT::Periodic::Unattended-Upgrade "0";/g' /etc/apt/apt.conf.d/20auto-upgrades
-
-    if [ -d /tmp/passivedns ]; then
-        sudo rm -rf /tmp/passivedns
-    fi
-
+    sudo modprobe br_netfilter
+    sudo sysctl -p
 }
 
 function install_clamav() {
     echo "[+] Installing clamav"
-    apt-get install clamav clamav-daemon clamav-freshclam clamav-unofficial-sigs python3-pyclamd -y
+    sudo apt-get install -y clamav clamav-daemon clamav-freshclam clamav-unofficial-sigs python3-pyclamd
 
     cat >> /usr/share/clamav-unofficial-sigs/conf.d/00-clamav-unofficial-sigs.conf << EOF
 # This file contains user configuration settings for the clamav-unofficial-sigs.sh
@@ -1227,15 +1280,15 @@ function install_CAPE() {
 
     cd /opt || return
     # if folder CAPEv2 dosn't exist, clone it
-#    if [ ! -d CAPEv2 ]; then
-#        git clone https://github.com/kevoreilly/CAPEv2/
-#    fi
+    if [ ! -d CAPEv2 ]; then
+        git clone https://github.com/kevoreilly/CAPEv2/
+    fi
     chown ${USER}:${USER} -R /opt/CAPEv2/
     #chown -R root:${USER} /usr/var/malheur/
     #chmod -R =rwX,g=rwX,o=X /usr/var/malheur/
     # Adapting owner permissions to the ${USER} path folder
     cd "/opt/CAPEv2/" || return
-    sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; CRYPTOGRAPHY_DONT_BUILD_RUST=1 poetry install'
+    sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; CRYPTOGRAPHY_DONT_BUILD_RUST=1 /etc/poetry/bin/poetry install'
 
     if [ "$DISABLE_LIBVIRT" -eq 0 ]; then
         sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry run /opt/CAPEv2/extra/libvirt_installer.sh'
@@ -1263,26 +1316,40 @@ function install_CAPE() {
     chown ${USER}:${USER} -R "/opt/CAPEv2/"
 
     if [ "$MONGO_ENABLE" -ge 1 ]; then
-      crudini --set conf/reporting.conf mongodb enabled yes
+        crudini --set conf/reporting.conf mongodb enabled yes
     fi
 
     if [ "$librenms_enable" -ge 1 ]; then
-      crudini --set conf/reporting.conf litereport enabled yes
-      crudini --set conf/reporting.conf runstatistics enabled yes
+        crudini --set conf/reporting.conf litereport enabled yes
+        crudini --set conf/reporting.conf runstatistics enabled yes
     fi
 
-    python3 utils/community.py -waf -cr --url "https://github.com/polyswarm/CAPESandbox-community/archive/${CAPE_SANDBOX_COMMUNITY_SHA}.tar.gz"
+    python3 utils/community.py -waf -cr
 
     # Configure direct internet connection
     sudo echo "400 ${INTERNET_IFACE}" >> /etc/iproute2/rt_tables
 
-    if [ ! -f /etc/sudoers.d/cape ]; then
-        cat >> /etc/sudoers.d/cape << EOF
+if [ ! -f /etc/sudoers.d/cape ]; then
+    cat >> /etc/sudoers.d/cape << EOF
 Cmnd_Alias CAPE_SERVICES = /usr/bin/systemctl restart cape-rooter, /usr/bin/systemctl restart cape-processor, /usr/bin/systemctl restart cape, /usr/bin/systemctl restart cape-web, /usr/bin/systemctl restart cape-dist, /usr/bin/systemctl restart cape-fstab, /usr/bin/systemctl restart suricata, /usr/bin/systemctl restart guac-web, /usr/bin/systemctl restart guacd
 ${USER} ALL=(ALL) NOPASSWD:CAPE_SERVICES
 EOF
-    fi
-
+fi
+if [ ! -f /etc/sudoers.d/ip_netns ]; then
+    cat >> /etc/sudoers.d/ip_netns << EOF
+${USER} ALL=NOPASSWD: /usr/sbin/ip netns exec * /usr/bin/sudo -u cape *
+EOF
+fi
+if [ ! -f /opt/mitmproxy/mitmdump_wrapper.sh ]; then
+    mkdir -p /opt/mitmproxy/
+    cat >> /opt/mitmproxy/mitmdump_wrapper.sh << EOF
+#!/bin/bash
+echo $$ > mitmdump.pid
+# exec full args
+exec $@
+EOF
+    chmod +x /opt/mitmproxy/mitmdump_wrapper.sh
+fi
     sed -i 's/security_driver = "apparmor"/security_driver = "none"/g' /etc/libvirt/qemu.conf
 }
 
@@ -1382,9 +1449,9 @@ function install_guacamole() {
     echo "[+] Installing guacamole"
     # Kudos to @Enzok https://github.com/kevoreilly/CAPEv2/pull/1065
     # https://guacamole.apache.org/doc/gug/installing-guacamole.html
-    sudo add-apt-repository ppa:remmina-ppa-team/remmina-next-daily
+    sudo add-apt-repository -y ppa:remmina-ppa-team/remmina-next-daily
     sudo apt-get update
-    sudo apt -y install libcairo2-dev libjpeg-turbo8-dev libpng-dev libossp-uuid-dev freerdp2-dev
+    sudo apt-get install -y libcairo2-dev libjpeg-turbo8-dev libpng-dev libossp-uuid-dev freerdp2-dev
     sudo apt-get install -y freerdp2-dev libssh2-1-dev libvncserver-dev libpulse-dev  libssl-dev libvorbis-dev libwebp-dev libpango1.0-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
 
     # https://downloads.apache.org/guacamole/$guacamole_version/source/
@@ -1412,7 +1479,7 @@ function install_guacamole() {
     sudo ldconfig
 
     #pip3 install -U 'Twisted[tls,http2]'
-    sudo apt install python3-twisted -y
+    sudo apt-get install -y python3-twisted
 
     if [ -f "/etc/systemd/system/guacd.service" ] ; then
         sudo rm /etc/systemd/system/guacd.service
@@ -1423,7 +1490,7 @@ function install_guacamole() {
         cp /opt/CAPEv2/systemd/guac-web.service /lib/systemd/system/guac-web.service
     fi
 
-    poetry_path=$(which poetry)
+    poetry_path="/etc/poetry/bin/poetry"
     if ! grep -q $poetry_path /lib/systemd/system/guac-web.service ; then
         sed -i "s|/usr/bin/poetry|$poetry_path|g" /lib/systemd/system/guac-web.service
     fi
@@ -1436,7 +1503,7 @@ function install_guacamole() {
     sudo usermod www-data -G ${USER}
 
     cd /opt/CAPEv2
-    sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry install'
+    sudo -u ${USER} bash -c "export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; ${poetry_path} install"
     cd ..
 
     systemctl daemon-reload
@@ -1446,14 +1513,14 @@ function install_guacamole() {
 
 function install_DIE() {
     echo "[+] Installing Detect It Easy"
-    apt-get install libqt5opengl5 libqt5script5 libqt5scripttools5 libqt5sql5 -y
+    sudo apt-get install -y libqt5opengl5 libqt5script5 libqt5scripttools5 libqt5sql5
     wget "https://github.com/horsicq/DIE-engine/releases/download/${DIE_VERSION}/die_${DIE_VERSION}_Ubuntu_${UBUNTU_VERSION}_amd64.deb" -O DIE.deb && dpkg -i DIE.deb
 }
 
 function install_fluentd() {
     echo "[+] Installing fluentd"
     curl -sSO https://dl.google.com/cloudagents/add-logging-agent-repo.sh && sudo bash add-logging-agent-repo.sh
-    sudo apt-get update && sudo apt-get install google-fluentd
+    sudo apt-get update && sudo apt-get install -y google-fluentd
     sudo apt-get install -y google-fluentd-catch-all-config-structured
     sudo service google-fluentd start && sudo service google-fluentd status
 }
@@ -1462,7 +1529,80 @@ function install_postgres_pg_activity() {
     echo "[+] Installing pg-activity"
     # amazing tool for monitoring https://github.com/dalibo/pg_activity
     # sudo -u postgres pg_activity -U postgres
-    apt install pg-activity -y
+    sudo apt-get install -y pg-activity
+}
+
+function install_polarproxy() {
+    echo "[+] Installing PolarProxy"
+
+    cd "/opt/" || return
+
+    if [ ! -d PolarProxy ]; then
+        mkdir PolarProxy
+    fi
+
+    cd PolarProxy
+    curl -o PolarProxy.tar.gz https://www.netresec.com/?download=PolarProxy
+    tar xf PolarProxy.tar.gz
+    chmod a+x PolarProxy
+
+    local KEY_PEM=PolarProxy-key.pem
+    local CRT_PEM=PolarProxy-crt.pem
+    local CRT_P12=PolarProxy-key-crt.p12
+    local CRT_CRT=PolarProxy-crt.crt
+
+    # Generate key
+    openssl req -x509 \
+        -newkey rsa:4096 \
+        -passin pass:$PASSWD \
+        -keyout $KEY_PEM \
+        -subj "/C=US/ST=California/L=San Diego/O=Development/OU=Dev/CN=CAPEv2 PolarProxy" \
+        -out $CRT_PEM \
+        -nodes \
+        -days 365
+
+    # Generate certificate
+    openssl x509 \
+        -inform PEM \
+        -passin pass:$PASSWD \
+        -in $CRT_PEM \
+        -out $CRT_CRT
+
+    # Bundle key and cert for PolarProxy
+    openssl pkcs12 \
+        -in $CRT_PEM \
+        -inkey $KEY_PEM \
+        -out $CRT_P12 \
+        -export \
+        -password pass:$PASSWD \
+        -name PolarProxy
+
+    chown -R $USER:$USER /opt/PolarProxy
+
+    chmod 600 $CRT_P12
+}
+
+function install_passivedns() {
+    sudo apt-get install -y git binutils-dev libldns-dev libpcap-dev libdate-simple-perl libdatetime-perl libdbd-mysql-perl
+    cd /tmp || return
+
+    # From pevious install
+    if [ -d /tmp/passivedns ]; then
+        sudo rm -rf /tmp/passivedns
+    fi
+    git clone https://github.com/gamelinux/passivedns.git
+    cd passivedns/ || return
+    autoreconf --install
+    ./configure
+    make -j"$(getconf _NPROCESSORS_ONLN)"
+    sudo checkinstall -D --pkgname=passivedns --default
+    chown ${USER}:${USER} -R /tmp/passivedns/
+    sed -i 's/APT::Periodic::Unattended-Upgrade "1";/APT::Periodic::Unattended-Upgrade "0";/g' /etc/apt/apt.conf.d/20auto-upgrades
+
+    if [ -d /tmp/passivedns ]; then
+        cd /tmp || return
+        sudo rm -rf /tmp/passivedns
+    fi
 }
 
 # Doesn't work ${$1,,}
@@ -1547,12 +1687,12 @@ case "$COMMAND" in
     fi
     # Update FLARE CAPA rules once per day
     if ! crontab -l | grep -q 'community.py -waf -cr'; then
-        crontab -l | { cat; echo "5 0 */1 * * cd /opt/CAPEv2/utils/ && sudo -u ${USER} poetry --directory /opt/CAPEv2/ run python3 community.py -waf -cr && poetry --directory /opt/CAPEv2/ run pip install -U flare-capa && systemctl restart cape-processor 2>/dev/null"; } | crontab -
+        crontab -l | { cat; echo "5 0 */1 * * cd /opt/CAPEv2/utils/ && sudo -u ${USER} /etc/poetry/bin/poetry --directory /opt/CAPEv2/ run python3 community.py -waf -cr && poetry --directory /opt/CAPEv2/ run pip install -U flare-capa && systemctl restart cape-processor 2>/dev/null"; } | crontab -
     fi
-	install_librenms
-	if [ "$clamav_enable" -ge 1 ]; then
-		install_clamav
-	fi
+    install_librenms
+    if [ "$clamav_enable" -ge 1 ]; then
+        install_clamav
+    fi
     ;;
 'systemd')
     install_systemd;;
@@ -1585,15 +1725,17 @@ case "$COMMAND" in
 'logrotate')
     install_logrotate;;
 'librenms')
-	install_librenms;;
+    install_librenms;;
 'librenms_cron_config')
-	librenms_cron_config;;
+    librenms_cron_config;;
 'librenms_snmpd_config')
-	librenms_snmpd_config;;
+    librenms_snmpd_config;;
 'librenms_sneck_config')
-	librenms_sneck_config;;
+    librenms_sneck_config;;
 'mitmproxy')
     install_mitmproxy;;
+'polarproxy')
+    install_polarproxy;;
 'issues')
     issues;;
 'nginx')
@@ -1620,6 +1762,8 @@ case "$COMMAND" in
     install_DIE;;
 'fluentd')
     install_fluentd;;
+'passivedns')
+    install_passivedns;;
 *)
     usage;;
 esac

@@ -1,3 +1,122 @@
+### [11.06.2025]
+* __Action required!__ For users of Python 3.12+ in guest, update the agent to solve #2621 affecting e.g. MSI detonation
+* Agent update: Fix issue with analyzer directory creation lacking required ACLs for Python 3.12, remove predictable "tmp" prefix for directory name(s) (fixes #2621)
+
+### [10.06.2025]
+* Monitor update: WMI hooks: add handling for VT_NULL and enable WMI_Get logging
+
+### [06.06.2025]
+* Monitor updates: 
+    * WMI hooks
+    * Fix format string vulnerability in debugger StringsOutput() function
+
+### [03.06.2025]
+* Monitor update: Fix bug in retarget_relative_displacement() relative offset calculation (thanks @ClaudioWayne)
+
+### [23.05.2025]
+* Socks5Systemz update: detection & config extraction, parser update also required (CAPE-parsers repo)
+* Monitor updates:
+    * Trace: do not wrap GetExportNameByAddress() in try/catch and do not use StepOverRegister in BreakOnReturnCallback()
+    * Debugger: fix br1 (break on return) config option parsing (config.c)
+    * Replace remaining uses of pipe("INFO:...) with DebugOutput()
+    * Trace: switch from using ScyllaGetExportNameByAddress() to GetExportNameByAddress()
+    * Harden ScanForExport() function (used by GetExportNameByAddress())
+
+### [8.05.2025]
+* PPLInject: Improve logging output if DLL transaction fails due to insufficiently large transaction target DLL in %SYSTEM%
+* Monitor update: Allow monitor to load without config ini file - defaults to standalone mode
+
+### [28.04.2025]
+* Monitor updates:
+    * .NET JIT cache dumps: off by default, configurable limit with option jit-dumps=X
+    * Windows Loader Snaps: vDbgPrintExWithPrefixInternal hook & option 'snaps=1' for loader snaps output in analysis log
+    * Disable AMSI dumps by default (and uncheck web submission tickbox)
+    * Native hookset (ntdll only) option: native=1
+    * CryptDuplicateKey hook (thanks @KillerInstinct)
+
+### [02.04.2025]
+* Monitor updates:
+    * Trace: allow custom stepping behavior with 'stepmode' option, stepmode=1 steps into short calls (e.g. Rhadamanthys control flow flattening)
+    * Hooking: replace sprintf calls with internal non-allocating implementation (num_to_hex(), uuid_to_string())
+    * CommandLineToArgvW hook
+* Cleaners update
+    * Now you can specify time range as 12h, 50m, 3d.
+    * Improved bulk cleanup for speed. Mongodb's calls collection now has task_id value. This allows to cleanup it faster.
+    * Servers that runs for years, might need to update their `tasks_tags` table schema by hand, only if you getting `ForeignKey violation`.
+```
+    ALTER TABLE tasks_tags DROP CONSTRAINT tasks_tags_task_id_fkey, ADD CONSTRAINT tasks_tags_task_id_fkey FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE;
+    ALTER TABLE tasks_tags DROP CONSTRAINT tasks_tags_tag_id_fkey, ADD CONSTRAINT tasks_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE;
+```
+
+### [14.03.2025] CAPA and FLOSS
+* CAPA and FLOSS configs are moved to `integrations.conf`
+
+### [01.03.2025] VirusTotal and MalwareBazaar
+* We have moved VirusTotal and MalwareBazaar to generic downloader so you can enable then in `integrations.conf`
+    * Downlod service allows you to set order + simplifies adding another services
+    * For `API` use `tasks/create/download_services/` instead of `tasks/create/vtdl/`. Example of data: `data={"hashes":"hash1,hash2"}`
+
+### [28.02.2025]
+* Monitor updates:
+    * NtCreateSection hook: add file path (from handle) to logging (thanks @scccccccccc)
+    * NtCreateSection LdrpCallInitRoutine hook: add coverage-module breakpoint setting, fix 64-bit address logging
+    * Trace: improve logging of conditional jump target addresses, on by default)
+
+### [27.02.2025]
+* Monitor update: Improve handling of bogus VirtualSize values in PE section table during dumping (e.g. e4f4afa1b85113656d4788a4f48fa5263b31b922d3e345093e082486193b0275)
+
+### [26.02.2025]
+* Monitor updates:
+    * Fix import reconstruction entrypoint setting - thanks @shuiyc
+    * Add hooks for MsiInstallProductA/W - thanks @KillerInstinct
+    * Add protected-pids config option (protected-pids=0 to disable, on by default)
+
+### [11.02.2025]
+* `selfextract.conf` renamed to `integrations.conf`.
+    * Please rename your config file.
+
+### [10.02.2025]
+* We are now on `Poetry v2`. If you see next message, you need to upgrade your `poetry` version.
+    * This one might be tricky as depends if your `poetry` was installed with `apt` or script. But something like this should works:
+        * `curl -sSL https://install.python-poetry.org | POETRY_HOME=/etc/poetry python3 -`
+```
+The Poetry configuration is invalid:
+  - Additional properties are not allowed ('requires-poetry' was unexpected)
+```
+* If you see missed `crispy_bootstrap4`. Just run `poetry install` as `cape` user.
+
+### [05.02.2025]
+* Monitor update: Fix hooking deadlock with delay-loaded dlls & make LdrpCallInitRoutine hook transparent
+
+### [28.01.2025]
+* Require `poetry>=2.0`.
+
+### [27.01.2025]
+* Monitor update: Fix import reconstruction (advanced submission option)
+
+### [23.01.2025]
+* Monitor update: Fix bug with dumping PE images with abnormally large PE header (e.g. 5ba3d13c57f6b08f34d8ec4f200091b458fdf48141c23ce959d9cda4804a7f5e) (thanks Kevin Ross)
+
+### [07.01.2025]
+* Monitor update: Fix bug with dump limit being tripped by AMSI preventing unpacked capture in e.g. e69ab87e878305285eab44652fa72b0168b53d2c9d95d5e40ae6311a5b6eec7b (thanks @YungBinary)
+
+### [31.12.2024]
+* Monitor updates:
+    * CoGetClassObject hook: add inspect_clsid for improved injection (e.g. 38a9847cb5ce4918bdfee2d54d5d3b79e1399cce15c7b68d86e8f0a5f48e3131)
+    * SetFileInformationByHandle hook
+    * GetComputerNameExW hook: add fake results for all NameTypes (e.g. 8056b8ff55c452cc87e35d69928cccbcfc5af848db1abb4fe0364510986e068b)
+    * RmStartSession hook (thanks para0x0dise)
+    * LdrpCallInitRoutine hook for Win10+
+
+### [01.11.2024] Parsers
+* Malware config parsers aka parsers are moved out of core of CAPE.
+    * Now they are at their own [repository](https://github.com/CAPESandbox/CAPE-parsers).
+        * Feature added. `load=X`, where `X` is one of those: all/core/community
+            * All = core and community
+        * Exclude parsers. Allows to not load some particular parsers. `exclude_parsers=["name1", "name2"]`
+    * Your custom parsers from `custom/parsers/` will still load and overwrite cape carser if name matches.
+* __Action required!__ `cd /opt/CAPEv2 && poetry install`
+
 ### [04.10.2024]
 * Monitor update: Add GetClassObject hook to handle UAC bypass technique using CMSTPLUA COM object
 * PrivateLoader direct syscall capture
@@ -492,7 +611,7 @@ rule X_cryptor {
     * You need to download version for your CPU and extract it to `data/NETReactorSlayer.CLI`
         * In case if you are on x64 host, then just run: `poetry run python utils/community.py -waf`
     * Add execution permission with `chmod a+x data/NETReactorSlayer.CLI`
-* Now each section inside of `selfextract.conf` has timeout value. Default is 60 seconds
+* Now each section inside of `integrations.conf` has timeout value. Default is 60 seconds
 
 ### [24.12.2022]
 * Monitor updates: Fix NtAllocateVirtualMemoryEx & NtMapViewOfSectionEx hooks and rebuild with Visual Studio 2022
