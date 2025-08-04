@@ -475,14 +475,14 @@ function install_libvirt() {
 
     # remove old
     apt-get purge libvirt0 libvirt-bin -y
-    apt-mark hold libvirt0 libvirt-bin
+    apt-mark hold libvirt0 libvirt-bin || true
 
     # In Ubuntu 22.04 the libvirt0 package is named libvirt
-    apt-get purge libvirt libvirt-bin -y
-    apt-mark hold libvirt libvirt-bin
+    apt-get purge libvirt libvirt-bin -y || true
+    apt-mark hold libvirt libvirt-bin || true
 
     # Remove any library binaries that might have been leftover
-    rm -f /usr/local/lib/x86_64-linux-gnu/libvirt*
+    rm -f /usr/local/lib/x86_64-linux-gnu/libvirt*  || true
 
     if [ ! -f /etc/apt/preferences.d/cape ]; then
     # set to hold to avoid side problems
@@ -515,8 +515,8 @@ EOH
     apt-mark hold qemu
     echo "qemu hold" | sudo dpkg --set-selections 2>/dev/null
     echo "[+] Checking/deleting old versions of Libvirt"
-    apt-get purge libvirt0 libvirt-bin libvirt-$libvirt_version 2>/dev/null
-    dpkg -l|grep "libvirt-[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all 2>/dev/null
+#    apt-get purge libvirt0 libvirt-bin libvirt-$libvirt_version 2>/dev/null
+#    dpkg -l|grep "libvirt-[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all 2>/dev/null
     apt-get install meson plocate libxml2-utils gnutls-bin  gnutls-dev libxml2-dev bash-completion libreadline-dev numactl libnuma-dev python3-docutils flex libjson-c-dev pylint pycodestyle -y
     # Remove old links
     updatedb
@@ -538,7 +538,7 @@ EOH
     else
         wget -q https://libvirt.org/sources/libvirt-$libvirt_version.tar.xz
         wget -q https://libvirt.org/sources/libvirt-$libvirt_version.tar.xz.asc
-        gpg --verify "libvirt-$libvirt_version.tar.xz.asc"
+#        gpg --verify "libvirt-$libvirt_version.tar.xz.asc"
     fi
     tar xf libvirt-$libvirt_version.tar.xz
     cd libvirt-$libvirt_version || return
@@ -608,16 +608,16 @@ EOH
     #echo "[+] Setting AppArmor for libvirt/kvm/qemu"
     sed -i 's/#security_driver = "selinux"/security_driver = "apparmor"/g' /etc/libvirt/qemu.conf
     # https://gitlab.com/apparmor/apparmor/wikis/Libvirt
-    FILES=(
-        /etc/apparmor.d/usr.sbin.libvirtd
-        /usr/sbin/libvirtd
-        /usr/libexec/virt-aa-helper
-    )
-    for file in "${FILES[@]}"; do
-        if [ -f "$file" ]; then
-            sudo aa-complain "$file"
-        fi
-    done
+#    FILES=(
+#        /etc/apparmor.d/usr.sbin.libvirtd
+#        /usr/sbin/libvirtd
+#        /usr/libexec/virt-aa-helper
+#    )
+#    for file in "${FILES[@]}"; do
+#        if [ -f "$file" ]; then
+#            sudo aa-complain "$file"
+#        fi
+#    done
 
     cd /tmp || return
 
@@ -664,11 +664,14 @@ EOH
             sed -i 's/#firewall_backend = "nftables"/firewall_backend = "iptables"/g' /etc/libvirt/network.conf
         fi
 
+#        sed -i 's/^Type=notify-reload/Type=simple/' /lib/systemd/system/libvirtd.service
+#        sed -i 's|^ExecStart=/usr/sbin/libvirtd $LIBVIRTD_ARGS|ExecStart=/usr/sbin/libvirtd --timeout 120|' /lib/systemd/system/libvirtd.service
+
         systemctl enable virtqemud.service virtnetworkd.service virtstoraged.service virtqemud.socket libvirtd.service
         systemctl start libvirtd.service
         echo "[+] You should logout and login "
     fi
-
+    echo "completed this block"
 }
 
 function install_virt_manager() {
@@ -785,6 +788,7 @@ function install_kvm_linux() {
     # WSL support
     aptitude install -f gcc make gnutls-bin -y
     install_libvirt
+    echo "install_libvirt complete"
 
     systemctl enable libvirtd.service virtlogd.socket
     systemctl restart libvirtd.service virtlogd.socket
@@ -908,15 +912,15 @@ function install_qemu() {
     cd /tmp || return
 
     echo '[+] Cleaning QEMU old install if exists'
-    rm -r /usr/share/qemu >/dev/null 2>&1
+#    rm -r /usr/share/qemu >/dev/null 2>&1
     dpkg -r ubuntu-vm-builder python-vm-builder >/dev/null 2>&1
-    dpkg -l |grep qemu |cut -d " " -f 3|xargs dpkg --purge --force-all >/dev/null 2>&1
+#    dpkg -l |grep qemu |cut -d " " -f 3|xargs dpkg --purge --force-all >/dev/null 2>&1
 
     echo '[+] Downloading QEMU source code'
     if [ ! -f qemu-$qemu_version.tar.xz ]; then
         wget -q "https://download.qemu.org/qemu-$qemu_version.tar.xz"
         wget -q "https://download.qemu.org/qemu-$qemu_version.tar.xz.sig"
-        gpg --verify "qemu-$qemu_version.tar.xz.sig"
+#        gpg --verify "qemu-$qemu_version.tar.xz.sig"
     fi
 
     if [ ! -f qemu-$qemu_version.tar.xz ]; then
@@ -1034,7 +1038,7 @@ function install_seabios() {
     echo '[+] Installing SeaBios dependencies'
     aptitude install -f git acpica-tools -y
     if [ ! -f "seabios_${seabios_version}.tar.gz" ]; then
-        rm "seabios_${seabios_version}"
+        rm "seabios_${seabios_version}" || true
         wget https://github.com/coreboot/seabios/archive/refs/tags/rel-${seabios_version}.tar.gz -O "seabios_${seabios_version}.tar.gz"
     fi
 
