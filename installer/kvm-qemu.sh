@@ -59,7 +59,7 @@ QTARGETS="--target-list=i386-softmmu,x86_64-softmmu,i386-linux-user,x86_64-linux
 
 
 #https://www.qemu.org/download/#source or https://download.qemu.org/
-qemu_version=9.2.2
+qemu_version=10.0.3
 # libvirt - https://libvirt.org/sources/
 # changelog - https://libvirt.org/news.html
 libvirt_version=11.1.0
@@ -664,11 +664,11 @@ EOH
             sed -i 's/#firewall_backend = "nftables"/firewall_backend = "iptables"/g' /etc/libvirt/network.conf
         fi
 
-        sed -i 's/^Type=notify-reload/Type=simple/' /lib/systemd/system/libvirtd.service
-        sed -i 's|^ExecStart=/usr/sbin/libvirtd $LIBVIRTD_ARGS|ExecStart=/usr/sbin/libvirtd --timeout 120|' /lib/systemd/system/libvirtd.service
+#        sed -i 's/^Type=notify-reload/Type=simple/' /lib/systemd/system/libvirtd.service
+#        sed -i 's|^ExecStart=/usr/sbin/libvirtd $LIBVIRTD_ARGS|ExecStart=/usr/sbin/libvirtd --timeout 120|' /lib/systemd/system/libvirtd.service
 
         systemctl enable virtqemud.service virtnetworkd.service virtstoraged.service virtqemud.socket libvirtd.service
-        systemctl start libvirtd.service
+#        systemctl start libvirtd.service
         echo "[+] You should logout and login "
     fi
 }
