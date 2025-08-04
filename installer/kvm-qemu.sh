@@ -766,10 +766,8 @@ function install_virt_manager() {
     fi
 
     sudo glib-compile-schemas --strict /usr/share/glib-2.0/schemas/
-#    systemctl enable virtstoraged.service
-#    systemctl start virtstoraged.service
-    systemctl enable virtstoraged.service && systemctl start virtstoraged.service
-    systemctl enable libvirtd.service && systemctl start libvirtd.service
+    systemctl enable virtstoraged.service #&& systemctl start virtstoraged.service
+    systemctl enable libvirtd.service #&& systemctl start libvirtd.service
 
     # i440FX-Issue Win7: Unable to complete install: 'XML error: The PCI controller with index='0' must be model='pci-root' for this machine type, but model='pcie-root' was found instead'
     # Workaround: Edit Overiew in XML view and delete all controller entries with type="pci"
@@ -792,7 +790,7 @@ function install_kvm_linux() {
     systemctl enable virtlogd.socket
     systemctl restart virtlogd.socket
 
-    kvm-ok
+    kvm-ok || true
 
     if ! grep -q -E '^net.bridge.bridge-nf-call-ip6tables' /etc/sysctl.conf; then
         cat >> /etc/sysctl.conf << EOF
@@ -804,18 +802,18 @@ EOF
     # Ubuntu 18.04:
     # /dev/kvm permissions always changed to root after reboot
     # "chown root:libvirt /dev/kvm" doesnt help
-    addgroup kvm
-    usermod -a -G kvm "$(whoami)"
+    addgroup kvm || true
+    usermod -a -G kvm "$(whoami)" || true
     if [[ -n "$username" ]]; then
         usermod -a -G kvm "$username"
     fi
-    chgrp kvm /dev/kvm
+    chgrp kvm /dev/kvm || true
     if [ ! -f /etc/udev/rules.d/50-qemu-kvm.rules ]; then
         echo 'KERNEL=="kvm", GROUP="kvm", MODE="0660"' >> /etc/udev/rules.d/50-qemu-kvm.rules
     fi
 
-    echo 1 > /sys/module/kvm/parameters/ignore_msrs
-    echo 0 > /sys/module/kvm/parameters/report_ignored_msrs
+    echo 1 > /sys/module/kvm/parameters/ignore_msrs || true
+    echo 0 > /sys/module/kvm/parameters/report_ignored_msrs || true
 
     if [ ! -f /etc/modprobe.d/kvm.conf ]; then
         cat >> /etc/modprobe.d/kvm.conf << EOF
