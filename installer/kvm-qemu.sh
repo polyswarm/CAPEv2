@@ -667,12 +667,10 @@ EOH
         sed -i 's/^Type=notify-reload/Type=simple/' /lib/systemd/system/libvirtd.service
         sed -i 's|^ExecStart=/usr/sbin/libvirtd $LIBVIRTD_ARGS|ExecStart=/usr/sbin/libvirtd --timeout 120|' /lib/systemd/system/libvirtd.service
 
-        journalctl -u libvirtd.service --no-pager
         systemctl enable virtqemud.service virtnetworkd.service virtstoraged.service virtqemud.socket libvirtd.service
         systemctl start libvirtd.service
         echo "[+] You should logout and login "
     fi
-    echo "completed this block"
 }
 
 function install_virt_manager() {
@@ -791,8 +789,8 @@ function install_kvm_linux() {
     install_libvirt
     echo "install_libvirt complete"
 
-    systemctl enable libvirtd.service virtlogd.socket
-    systemctl restart libvirtd.service virtlogd.socket
+    systemctl enable virtlogd.socket
+    systemctl restart virtlogd.socket
 
     kvm-ok
 
