@@ -664,9 +664,10 @@ EOH
             sed -i 's/#firewall_backend = "nftables"/firewall_backend = "iptables"/g' /etc/libvirt/network.conf
         fi
 
-#        sed -i 's/^Type=notify-reload/Type=simple/' /lib/systemd/system/libvirtd.service
+        sed -i 's/^Type=notify-reload/Type=simple/' /lib/systemd/system/libvirtd.service
         sed -i 's|^ExecStart=/usr/sbin/libvirtd $LIBVIRTD_ARGS|ExecStart=/usr/sbin/libvirtd --timeout 120|' /lib/systemd/system/libvirtd.service
 
+        journalctl -u libvirtd.service --no-pager
         systemctl enable virtqemud.service virtnetworkd.service virtstoraged.service virtqemud.socket libvirtd.service
         systemctl start libvirtd.service
         echo "[+] You should logout and login "
