@@ -690,7 +690,6 @@ EOL
 
 function install_suricata() {
     echo '[+] Installing Suricata'
-    sudo apt-get install -y libcap-ng-utils libcap-ng0 libcap-ng-dev
     sudo add-apt-repository -y ppa:oisf/suricata-stable
     sudo apt-get -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-overwrite" install -y suricata
     touch /etc/suricata/threshold.config
