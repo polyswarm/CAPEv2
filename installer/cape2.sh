@@ -736,36 +736,6 @@ outputs.1.eve-log.enabled: yes
 file-store.enabled: yes
 EOF
 
-    #change suricata yaml
-    sed -i 's|#default-rule-path: /etc/suricata/rules|default-rule-path: /etc/suricata/rules|g' /etc/default/suricata
-    sed -i 's|default-rule-path: /var/lib/suricata/rules|default-rule-path: /etc/suricata/rules|g' /etc/suricata/suricata.yaml
-    sed -i 's/#rule-files:/rule-files:/g' /etc/suricata/suricata.yaml
-    sed -i 's/# - suricata.rules/ - suricata.rules/g' /etc/suricata/suricata.yaml
-    sed -i 's/RUN=yes/RUN=no/g' /etc/default/suricata
-    sed -i 's/mpm-algo: ac/mpm-algo: hs/g' /etc/suricata/suricata.yaml
-    sed -i 's/mpm-algo: auto/mpm-algo: hs/g' /etc/suricata/suricata.yaml
-    sed -i 's/#run-as:/run-as:/g' /etc/suricata/suricata.yaml
-    sed -i "s/#  user: suri/   user: ${USER}/g" /etc/suricata/suricata.yaml
-    sed -i "s/#  group: suri/   group: ${USER}/g" /etc/suricata/suricata.yaml
-    sed -i 's/    depth: 1mb/    depth: 0/g' /etc/suricata/suricata.yaml
-    sed -i 's/request-body-limit: 100kb/request-body-limit: 0/g' /etc/suricata/suricata.yaml
-    sed -i 's/response-body-limit: 100kb/response-body-limit: 0/g' /etc/suricata/suricata.yaml
-    sed -i 's/EXTERNAL_NET: "!$HOME_NET"/EXTERNAL_NET: "ANY"/g' /etc/suricata/suricata.yaml
-    sed -i 's|#pid-file: /var/run/suricata.pid|pid-file: /tmp/suricata.pid|g' /etc/suricata/suricata.yaml
-    sed -i 's|#ja3-fingerprints: auto|ja3-fingerprints: yes|g' /etc/suricata/suricata.yaml
-    #-k none
-    sed -i 's/#checksum-validation: none/checksum-validation: none/g' /etc/suricata/suricata.yaml
-    sed -i 's/checksum-checks: auto/checksum-checks: no/g' /etc/suricata/suricata.yaml
-
-vars.address-groups.EXTERNAL_NET: "ANY"
-# pid-file: /run/suricata.pid
-# https://forum.suricata.io/t/suricata-service-crashes-with-pthread-create-is-11-error-when-processing-pcap-with-capev2/3870/5
-security.limit-noproc: false
-
-outputs.1.eve-log.enabled: yes
-file-store.enabled: yes
-EOF
-
     sed -i '$a include:\n  - cape.yaml\n' /etc/suricata/suricata.yaml
     usermod -aG pcap suricata
     usermod -aG suricata "${USER}"
