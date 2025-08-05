@@ -740,8 +740,8 @@ EOF
     usermod -aG pcap suricata
     usermod -aG suricata "${USER}"
 
-    chown ${USER}:${USER} -R /etc/suricata
-    chown ${USER}:${USER} -R /var/log/suricata
+#    chown ${USER}:${USER} -R /etc/suricata
+#    chown ${USER}:${USER} -R /var/log/suricata
     systemctl restart suricata
 
     # How to verify config options
