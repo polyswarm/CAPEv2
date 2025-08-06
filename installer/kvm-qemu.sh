@@ -608,16 +608,16 @@ EOH
     #echo "[+] Setting AppArmor for libvirt/kvm/qemu"
     sed -i 's/#security_driver = "selinux"/security_driver = "apparmor"/g' /etc/libvirt/qemu.conf
     # https://gitlab.com/apparmor/apparmor/wikis/Libvirt
-#    FILES=(
-#        /etc/apparmor.d/usr.sbin.libvirtd
-#        /usr/sbin/libvirtd
-#        /usr/libexec/virt-aa-helper
-#    )
-#    for file in "${FILES[@]}"; do
-#        if [ -f "$file" ]; then
-#            sudo aa-complain "$file"
-#        fi
-#    done
+    FILES=(
+        /etc/apparmor.d/usr.sbin.libvirtd
+        /usr/sbin/libvirtd
+        /usr/libexec/virt-aa-helper
+    )
+    for file in "${FILES[@]}"; do
+        if [ -f "$file" ]; then
+            sudo aa-complain "$file"
+        fi
+    done
 
     cd /tmp || return
 
