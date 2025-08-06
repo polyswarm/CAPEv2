@@ -56,7 +56,7 @@ librenms_mdadm_enable=0
 librenms_megaraid_enable=0
 
 # disabling this will result in the web interface being disabled
-MONGO_ENABLE=1
+MONGO_ENABLE=0
 
 DIE_VERSION="3.10"
 
