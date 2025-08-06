@@ -604,9 +604,12 @@ EOH
     sed -i 's/#auth_unix_rw = "none"/auth_unix_rw = "none"/g' /etc/libvirt/*.conf
     sed -i 's/#auth_unix_ro = "polkit"/auth_unix_ro = "none"/g' /etc/libvirt/*.conf
     sed -i 's/#auth_unix_rw = "polkit"/auth_unix_rw = "none"/g' /etc/libvirt/*.conf
+    sed -i 's/#listen_tcp = 1/listen_tcp = 1/g' /etc/libvirt/*.conf
+    sed -i 's/#listen_tls = 0/listen_tls = 0/g' /etc/libvirt/*.conf
+    sed -i 's/#auth_tcp = "sasl"/auth_tcp= "none"/g' /etc/libvirt/*.conf
+    sed -i 's/#tcp_port = "16509"/tcp_port = "16509"/g' /etc/libvirt/*.conf
 
     #echo "[+] Setting AppArmor for libvirt/kvm/qemu"
-    sudo mount -t securityfs securityfs /sys/kernel/security
     sed -i 's/#security_driver = "selinux"/security_driver = "apparmor"/g' /etc/libvirt/qemu.conf
     # https://gitlab.com/apparmor/apparmor/wikis/Libvirt
     FILES=(
