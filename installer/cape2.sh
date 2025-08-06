@@ -1321,7 +1321,6 @@ EOF
     chmod +x /opt/mitmproxy/mitmdump_wrapper.sh
 fi
     sed -i 's/security_driver = "apparmor"/security_driver = "none"/g' /etc/libvirt/qemu.conf
-    sed -i -e 's/GRUB_CMDLINE_LINUX_DEFAULT="/&security=apparmor /' /etc/default/grub
 
 }
 

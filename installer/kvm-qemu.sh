@@ -606,6 +606,7 @@ EOH
     sed -i 's/#auth_unix_rw = "polkit"/auth_unix_rw = "none"/g' /etc/libvirt/*.conf
 
     #echo "[+] Setting AppArmor for libvirt/kvm/qemu"
+    sudo mount -t securityfs securityfs /sys/kernel/security
     sed -i 's/#security_driver = "selinux"/security_driver = "apparmor"/g' /etc/libvirt/qemu.conf
     # https://gitlab.com/apparmor/apparmor/wikis/Libvirt
     FILES=(
