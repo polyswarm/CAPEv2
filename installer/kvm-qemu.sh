@@ -615,7 +615,7 @@ EOH
     )
     for file in "${FILES[@]}"; do
         if [ -f "$file" ]; then
-            sudo aa-complain "$file"
+            sudo aa-complain "$file" || true
         fi
     done
 
