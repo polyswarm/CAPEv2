@@ -17,6 +17,25 @@ from pathlib import Path
 
 # Private
 import custom.signatures
+
+try:
+    import custom.signatures.all
+except ImportError:
+    HAS_CUSTOM_SIGNATURES_ALL = False
+else:
+    HAS_CUSTOM_SIGNATURES_ALL = True
+try:
+    import custom.signatures.linux
+except ImportError:
+    HAS_CUSTOM_SIGNATURES_LINUX = False
+else:
+    HAS_CUSTOM_SIGNATURES_LINUX = True
+try:
+    import custom.signatures.windows
+except ImportError:
+    HAS_CUSTOM_SIGNATURES_WINDOWS = False
+else:
+    HAS_CUSTOM_SIGNATURES_WINDOWS = True
 import modules.auxiliary
 import modules.feeds
 import modules.processing
@@ -99,14 +118,15 @@ def check_webgui_mongo():
         # with large amounts of data.
         # Note: Silently ignores the creation if the index already exists.
         mongo_create_index("analysis", "info.id", name="info.id_1")
-        # mongo_create_index([("target.file.sha256", TEXT)], name="target_sha256")
-        # We performs a lot of SHA256 hash lookup so we need this index
-        # mongo_create_index(
-        #     "analysis",
-        #     [("target.file.sha256", TEXT), ("dropped.sha256", TEXT), ("procdump.sha256", TEXT), ("CAPE.payloads.sha256", TEXT)],
-        #     name="ALL_SHA256",
-        # )
+        # Some indexes that can be useful for some users
+        mongo_create_index("files", "md5", name="file_md5")
         mongo_create_index("files", [("_task_ids", 1)])
+
+        # side indexes as ideas
+        """
+            mongo_create_index("analysis", "detections", name="detections_1")
+            mongo_create_index("analysis", "target.file.name", name="name_1")
+        """
 
     elif repconf.elasticsearchdb.enabled:
         # ToDo add check
@@ -164,7 +184,7 @@ class ConsoleHandler(logging.StreamHandler):
             colored.msg = red(record.msg)
         else:
             # Hack for pymongo.logger.LogMessage
-            if type(record.msg) != "str":
+            if not isinstance(record.msg, str):
                 record.msg = str(record.msg)
 
             if "analysis procedure completed" in record.msg:
@@ -180,9 +200,7 @@ def check_linux_dist():
     with suppress(AttributeError):
         platform_details = platform.dist()
         if platform_details[0] != "Ubuntu" and platform_details[1] not in ubuntu_versions:
-            log.info(
-                f"[!] You are using NOT supported Linux distribution by devs! Any issue report is invalid! We only support Ubuntu LTS {ubuntu_versions}"
-            )
+            log.info("[!] You are using NOT supported Linux distribution by devs! Any issue report is invalid! We only support Ubuntu LTS %s", ubuntu_versions)
 
 
 def init_logging(level: int):
@@ -272,6 +290,12 @@ def init_modules():
     import_package(modules.signatures.linux)
     # Import all private signatures
     import_package(custom.signatures)
+    if HAS_CUSTOM_SIGNATURES_ALL:
+        import_package(custom.signatures.all)
+    if HAS_CUSTOM_SIGNATURES_LINUX:
+        import_package(custom.signatures.linux)
+    if HAS_CUSTOM_SIGNATURES_WINDOWS:
+        import_package(custom.signatures.windows)
     if len(os.listdir(os.path.join(CUCKOO_ROOT, "modules", "signatures"))) < 5:
         log.warning("Suggestion: looks like you didn't install community, execute: poetry run python utils/community.py -h")
     # Import all reporting modules.
@@ -537,4 +561,4 @@ def check_vms_n_resultserver_networking():
         vm_ip, vm_rs = network
         # is there are better way to check networkrange without range CIDR?
         if not resultserver_block.startswith(vm_ip) or (vm_rs and not vm_rs.startswith(vm_ip)):
-            log.error(f"Your resultserver and VM:{vm} are in different nework ranges. This might give you: CuckooDeadMachine")
+            log.error("Your resultserver and VM: %s are in different nework ranges. This might give you: CuckooDeadMachine", vm)

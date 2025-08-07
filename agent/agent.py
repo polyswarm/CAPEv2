@@ -9,7 +9,6 @@ import enum
 import http.server
 import ipaddress
 import json
-import multiprocessing
 import os
 import platform
 import random
@@ -30,7 +29,7 @@ from typing import Iterable
 from zipfile import ZipFile
 
 try:
-    import re2 as re
+    import re2 as re  # type: ignore
 except ImportError:
     import re
 
@@ -44,7 +43,7 @@ if sys.version_info[:2] < (3, 6):
 if sys.maxsize > 2**32 and sys.platform == "win32":
     sys.exit("You should install python3 x86! not x64")
 
-AGENT_VERSION = "0.18"
+AGENT_VERSION = "0.20"
 AGENT_FEATURES = [
     "execpy",
     "execute",
@@ -96,7 +95,7 @@ class Status(enum.IntEnum):
 AGENT_BROWSER_EXT_PATH = ""
 AGENT_BROWSER_LOCK = Lock()
 ANALYZER_FOLDER = ""
-agent_mutexes = {}
+agent_mutexes: dict = {}
 """Holds handles of mutexes held by the agent."""
 state = {
     "status": Status.INIT,
@@ -177,12 +176,12 @@ class MiniHTTPServer:
 
     def run(
         self,
-        host: ipaddress.IPv4Address = "0.0.0.0",
+        host: ipaddress.IPv4Address = ipaddress.IPv4Address("0.0.0.0"),
         port: int = 8000,
-        event: multiprocessing.Event = None,
+        event = None,
     ):
         socketserver.ThreadingTCPServer.allow_reuse_address = True
-        self.s = socketserver.ThreadingTCPServer((host, port), self.handler)
+        self.s = socketserver.ThreadingTCPServer((str(host), port), self.handler)
 
         # tell anyone waiting that they're good to go
         if event:
@@ -226,7 +225,6 @@ class MiniHTTPServer:
             self.close_connection = True
 
     def shutdown(self):
-
         # BaseServer also features a .shutdown() method, but you can't use
         # that from the same thread as that will deadlock the whole thing.
         if hasattr(self, "s"):
@@ -248,7 +246,7 @@ class jsonify:
     def init(self):
         pass
 
-    def json(self):
+    def json(self) -> str:
         for valkey in self.values:
             if isinstance(self.values[valkey], bytes):
                 self.values[valkey] = self.values[valkey].decode("utf8", "replace")
@@ -324,8 +322,8 @@ class send_file:
 
 
 class request:
-    form = {}
-    files = {}
+    form: dict = {}
+    files: dict = {}
     client_ip = None
     client_port = None
     method = None
@@ -334,7 +332,7 @@ class request:
     }
 
 
-app = MiniHTTPServer()
+app: MiniHTTPServer = MiniHTTPServer()
 
 
 def isAdmin():
@@ -378,7 +376,7 @@ def get_subprocess_status():
     """Return the subprocess status."""
     async_subprocess = state.get("async_subprocess")
     message = "Analysis status"
-    exitcode = async_subprocess.exitcode
+    exitcode = async_subprocess.poll()
     if exitcode is None or (sys.platform == "win32" and exitcode == 259):
         # Process is still running.
         state["status"] = Status.RUNNING
@@ -546,7 +544,7 @@ def do_mkdir():
 @app.route("/mktemp", methods=("GET", "POST"))
 def do_mktemp():
     suffix = request.form.get("suffix", "")
-    prefix = request.form.get("prefix", "tmp")
+    prefix = request.form.get("prefix", "")
     dirpath = request.form.get("dirpath")
 
     try:
@@ -562,11 +560,13 @@ def do_mktemp():
 @app.route("/mkdtemp", methods=("GET", "POST"))
 def do_mkdtemp():
     suffix = request.form.get("suffix", "")
-    prefix = request.form.get("prefix", "tmp")
+    prefix = request.form.get("prefix", "")
     dirpath = request.form.get("dirpath")
 
     try:
         dirpath = tempfile.mkdtemp(suffix=suffix, prefix=prefix, dir=dirpath)
+        if sys.platform == "win32":
+            subprocess.call(["icacls", dirpath, "/inheritance:e", "/grant", "BUILTIN\\Users:(OI)(CI)(RX)"])
     except Exception:
         return json_exception("Error creating temporary directory")
 
@@ -713,9 +713,7 @@ def background_subprocess(command_args, cwd, base64_encode, shell=False):
 
 def spawn(args, cwd, base64_encode, shell=False):
     """Kick off a subprocess in the background."""
-    run_subprocess_args = [args, cwd, base64_encode, shell]
-    proc = multiprocessing.Process(target=background_subprocess, name=f"child process {args[1]}", args=run_subprocess_args)
-    proc.start()
+    proc = subprocess.Popen(args, cwd=cwd, shell=shell)
     state["status"] = Status.RUNNING
     state["description"] = ""
     state["async_subprocess"] = proc
@@ -765,7 +763,7 @@ def do_browser_ext():
     AGENT_BROWSER_LOCK.acquire()
     if not AGENT_BROWSER_EXT_PATH:
         try:
-            ext_tmpdir = tempfile.mkdtemp(prefix="tmp")
+            ext_tmpdir = tempfile.mkdtemp(prefix="")
         except Exception:
             AGENT_BROWSER_LOCK.release()
             return json_exception("Error creating temporary directory")
@@ -799,7 +797,6 @@ def do_kill():
 
 
 if __name__ == "__main__":
-    multiprocessing.set_start_method("spawn")
     parser = argparse.ArgumentParser()
     parser.add_argument("host", nargs="?", default="0.0.0.0")
     parser.add_argument("port", type=int, nargs="?", default=8000)
