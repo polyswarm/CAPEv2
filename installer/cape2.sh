@@ -1259,7 +1259,6 @@ function install_CAPE() {
     # Adapting owner permissions to the ${USER} path folder
     cd "/opt/CAPEv2/" || return
     sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; CRYPTOGRAPHY_DONT_BUILD_RUST=1 /etc/poetry/bin/poetry install'
-
     if [ "$DISABLE_LIBVIRT" -eq 0 ]; then
         sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry run /opt/CAPEv2/extra/libvirt_installer.sh'
         sudo usermod -aG kvm ${USER}
@@ -1284,6 +1283,8 @@ function install_CAPE() {
     sed -i "/interface =/cinterface = ${NETWORK_IFACE}" conf/auxiliary.conf
 
     chown ${USER}:${USER} -R "/opt/CAPEv2/"
+
+    sudo -u ${USER} bash -c '/etc/poetry/bin/poetry --directory /opt/CAPEv2/ run pip install -U git+https://github.com/polyswarm/httpreplay'
 
     if [ "$MONGO_ENABLE" -ge 1 ]; then
         crudini --set conf/reporting.conf mongodb enabled yes
