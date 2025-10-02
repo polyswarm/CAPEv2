@@ -185,6 +185,7 @@ def del_pid_from_aux_modules(pid):
 
 def upload_files(folder):
     """Create a copy of the given file path."""
+    log.info("Uploading files in %s", folder)
     log_folder = f"{PATHS['root']}\\{folder}"
     try:
         if os.path.exists(log_folder):
@@ -196,8 +197,10 @@ def upload_files(folder):
         log.warning('Unable to access folder at path "%s": %s', log_folder, e)
         return
 
+    log.info('walking %s', log_folder)
     for root, _, files in os.walk(log_folder):
         for file in files:
+            log.info('Uploading file "%s"', file)
             file_path = os.path.join(root, file)
             upload_path = os.path.join(folder, file)
             try:

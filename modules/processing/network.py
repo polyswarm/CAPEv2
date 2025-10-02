@@ -1160,9 +1160,11 @@ class NetworkAnalysis(Processing):
         tlsmaster = {}
         dump_tls_log = os.path.join(self.analysis_path, "tlsdump", "tlsdump.log")
         if not path_exists(dump_tls_log):
+            print('tlsdump.log does not exist at %s', dump_tls_log)
             return tlsmaster
 
         for entry in open(dump_tls_log, "r").readlines() or []:
+            print('processing tls dump')
             try:
                 for m in re.finditer(
                     r"client_random:\s*(?P<client_random>[a-f0-9]+)\s*,\s*server_random:\s*(?P<server_random>[a-f0-9]+)\s*,\s*master_secret:\s*(?P<master_secret>[a-f0-9]+)\s*",
