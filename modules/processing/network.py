@@ -1094,10 +1094,8 @@ class NetworkAnalysis(Processing):
         https://github.com/trisulnsm/trisul-scripts/blob/master/lua/frontend_scripts/reassembly/ja3/prints/ja3fingerprint.json
         :return: dictionary of ja3 fingerprint descreptions
         """
-        print('_import_ja3_fprints ')
         ja3_fprints = {}
         if path_exists(self.ja3_file):
-            print('_import_ja3_fprints path_exists')
             with open(self.ja3_file, "r") as fpfile:
                 for line in fpfile:
                     try:
@@ -1106,8 +1104,6 @@ class NetworkAnalysis(Processing):
                             ja3_fprints[ja3["ja3_hash"]] = ja3["desc"]
                     except Exception as e:
                         print(e)
-        print('_import_ja3_fprints result')
-        print(ja3_fprints)
         return ja3_fprints
 
     def run(self):
@@ -1142,15 +1138,20 @@ class NetworkAnalysis(Processing):
                 results.update(Pcap(sorted_path, ja3_fprints, self.options).run())
 
         if HAVE_HTTPREPLAY:
+            print('HAVE_HTTPREPLAY')
             try:
                 p2 = {}
                 tls_master = self.get_tlsmaster()
+                print(tls_master)
                 if tls_master:
                     p2 = Pcap2(self.pcap_path, tls_master, self.network_path).run()
+                print(p2)
                 if p2:
                     results.update(p2)
             except Exception:
                 log.exception("Error running httpreplay-based PCAP analysis")
+        else:
+            print('no HAVE_HTTPREPLAY')
 
         return results
 
