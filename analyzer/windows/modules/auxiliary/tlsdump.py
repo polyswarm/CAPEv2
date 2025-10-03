@@ -7,8 +7,10 @@ from ctypes import byref, sizeof
 
 from lib.api.process import Process
 from lib.common.abstracts import Auxiliary
+from lib.common.results import upload_to_host
 from lib.common.defines import KERNEL32, PROCESSENTRY32, TH32CS_SNAPPROCESS
 from lib.common.exceptions import CuckooError
+from lib.common.constants import PATHS
 
 log = logging.getLogger(__name__)
 
@@ -52,4 +54,5 @@ class TLSDumpMasterSecrets(Auxiliary):
                     "An unknown error occurred while trying to inject into the lsass.exe process to dump TLS master secrets: %s",
                     e,
                 )
+        upload_to_host(f'{PATHS['root']}\\tlsdump\\tlsdump.log', 'tlsdump/tlsdump.log')
         del self.options["tlsdump"]
