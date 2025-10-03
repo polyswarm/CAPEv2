@@ -54,5 +54,5 @@ class TLSDumpMasterSecrets(Auxiliary):
                     "An unknown error occurred while trying to inject into the lsass.exe process to dump TLS master secrets: %s",
                     e,
                 )
-        upload_to_host(f'{PATHS['root']}\\tlsdump\\tlsdump.log', 'tlsdump/tlsdump.log')
+        upload_to_host(f'{PATHS["root"]}\\tlsdump\\tlsdump.log', 'tlsdump/tlsdump.log')
         del self.options["tlsdump"]
