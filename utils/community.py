@@ -312,7 +312,7 @@ def main():
         args.file,
         args.token,
         args.proxy,
-        args.url or f"https://github.com/kevoreilly/community/archive/{args.branch}.tar.gz",
+        args.url or f"https://github.com/polyswarm/CAPESandbox-community/archive/{os.getenv('CAPE_SANDBOX_COMMUNITY_SHA')}.tar.gz",
     )
 
 

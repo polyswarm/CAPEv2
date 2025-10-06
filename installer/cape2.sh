@@ -56,7 +56,7 @@ librenms_mdadm_enable=0
 librenms_megaraid_enable=0
 
 # disabling this will result in the web interface being disabled
-MONGO_ENABLE=1
+MONGO_ENABLE=0
 
 DIE_VERSION="3.10"
 
@@ -739,9 +739,9 @@ EOF
     sed -i '$a include:\n  - cape.yaml\n' /etc/suricata/suricata.yaml
     usermod -aG pcap suricata
     usermod -aG suricata "${USER}"
-    # sudo chmod -R g+w /var/log/suricata/
-    # sudo chmod -R g+w /var/run/suricata/
-    # sudo chmod -R g+w /etc/suricata
+
+#    chown ${USER}:${USER} -R /etc/suricata
+#    chown ${USER}:${USER} -R /var/log/suricata
     systemctl restart suricata
 
     # How to verify config options
@@ -797,7 +797,7 @@ function install_yara() {
     ldconfig
 
     # Run yara installer script
-    sudo -u ${USER} /etc/poetry/bin/poetry --directory /opt/CAPEv2 run extra/yara_installer.sh
+    sudo -u ${USER} bash -c "YARA_PYTHON_GITHUB_SHA=${YARA_PYTHON_GITHUB_SHA} poetry --directory /opt/CAPEv2/ run /opt/CAPEv2/extra/yara_installer.sh"
 
     if [ -d yara-python ]; then
         sudo rm -rf yara-python
@@ -846,8 +846,8 @@ function install_mongo(){
             systemctl stop mongod.service
             systemctl disable mongod.service
             rm /lib/systemd/system/mongod.service
-            rm /lib/systemd/system/mongod.service
-            systemctl daemon-reload
+#            rm /lib/systemd/system/mongod.service
+#            systemctl daemon-reload
         fi
 
         if [ ! -f /lib/systemd/system/mongodb.service ]; then
@@ -880,8 +880,8 @@ EOF
         sudo mkdir -p /data/{config,}db
         sudo chown mongodb:mongodb /data/ -R
         systemctl unmask mongodb.service
-        systemctl enable mongodb.service
-        systemctl restart mongodb.service
+#        systemctl enable mongodb.service
+#        systemctl restart mongodb.service
 
         if ! crontab -l | grep -q -F 'delete-unused-file-data-in-mongo'; then
             crontab -l | { cat; echo "30 1 * * 0 cd /opt/CAPEv2 && sudo -u ${USER} /etc/poetry/bin/poetry run python ./utils/cleaners.py --delete-unused-file-data-in-mongo"; } | crontab -
@@ -1259,16 +1259,15 @@ function install_CAPE() {
     # Adapting owner permissions to the ${USER} path folder
     cd "/opt/CAPEv2/" || return
     sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; CRYPTOGRAPHY_DONT_BUILD_RUST=1 /etc/poetry/bin/poetry install'
-
     if [ "$DISABLE_LIBVIRT" -eq 0 ]; then
-        sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; /etc/poetry/bin/poetry run extra/libvirt_installer.sh'
+        sudo -u ${USER} bash -c 'export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring; poetry run /opt/CAPEv2/extra/libvirt_installer.sh'
         sudo usermod -aG kvm ${USER}
         sudo usermod -aG libvirt ${USER}
     fi
 
     #packages are needed for build options in extra/yara_installer.sh
-    sudo apt-get install -y libjansson-dev libmagic1 libmagic-dev
-    sudo -u ${USER} bash -c '/etc/poetry/bin/poetry run /opt/CAPEv2/extra/yara_installer.sh'
+    apt-get install libjansson-dev libmagic1 libmagic-dev -y
+    sudo -u ${USER} bash -c "YARA_PYTHON_GITHUB_SHA=${YARA_PYTHON_GITHUB_SHA} poetry run /opt/CAPEv2/extra/yara_installer.sh"
 
     if [ -d /tmp/yara-python ]; then
         sudo rm -rf /tmp/yara-python
@@ -1284,6 +1283,8 @@ function install_CAPE() {
     sed -i "/interface =/cinterface = ${NETWORK_IFACE}" conf/auxiliary.conf
 
     chown ${USER}:${USER} -R "/opt/CAPEv2/"
+
+    sudo -u ${USER} bash -c '/etc/poetry/bin/poetry --directory /opt/CAPEv2/ run pip install -U git+https://github.com/polyswarm/httpreplay'
 
     if [ "$MONGO_ENABLE" -ge 1 ]; then
         crudini --set conf/reporting.conf mongodb enabled yes
@@ -1320,6 +1321,8 @@ exec $@
 EOF
     chmod +x /opt/mitmproxy/mitmdump_wrapper.sh
 fi
+    sed -i 's/security_driver = "apparmor"/security_driver = "none"/g' /etc/libvirt/qemu.conf
+
 }
 
 function install_systemd() {
@@ -1332,7 +1335,7 @@ function install_systemd() {
     systemctl daemon-reload
     cape_web_enable_string=''
     if [ "$MONGO_ENABLE" -ge 1 ]; then
-        cape_web_enable_string="cape-web"
+      cape_web_enable_string="cape-web"
     fi
 
     systemctl enable cape cape-rooter cape-processor "$cape_web_enable_string" suricata
@@ -1392,9 +1395,9 @@ function install_node_exporter() {
 
 function install_volatility3() {
     echo "[+] Installing volatility3"
-    sudo apt-get install -y unzip
-    sudo -u ${USER} /etc/poetry/bin/poetry run pip3 install git+https://github.com/volatilityfoundation/volatility3
-    vol_path=$(sudo -u ${USER} /etc/poetry/bin/poetry run python3 -c "import volatility3.plugins;print(volatility3.__file__.replace('__init__.py', 'symbols/'))")
+    sudo apt-get install unzip
+    sudo -u ${USER} poetry --directory /opt/CAPEv2/ run pip3 install git+https://github.com/volatilityfoundation/volatility3
+    vol_path=$(sudo -u ${USER} poetry --directory /opt/CAPEv2/ run python3 -c "import volatility3.plugins;print(volatility3.__file__.replace('__init__.py', 'symbols/'))")
     cd $vol_path || return
     wget https://downloads.volatilityfoundation.org/volatility3/symbols/windows.zip -O windows.zip
     unzip -o windows.zip

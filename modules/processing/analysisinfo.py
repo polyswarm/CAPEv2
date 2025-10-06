@@ -33,7 +33,7 @@ def get_running_commit() -> str:
         return "unknown"
 
 
-CAPE_CURRENT_COMMIT_HASH = get_running_commit()
+CAPE_CURRENT_COMMIT_HASH = "384613f85a48345cbebad802d1f1676d7953b9c9"
 
 
 class AnalysisInfo(Processing):

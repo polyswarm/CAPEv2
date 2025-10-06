@@ -1,4 +1,5 @@
 #!/bin/bash
+set -ex
 
 # Copyright (C) 2011-2024 DoomedRaven.
 # This file is part of Tools - https://github.com/doomedraven/Tools
@@ -263,8 +264,74 @@ function _enable_tcp_bbr() {
 }
 
 function install_apparmor() {
-    aptitude install -f bison linux-generic-hwe-24.04 -y
-    aptitude install -f apparmor apparmor-profiles apparmor-profiles-extra apparmor-utils libapparmor-dev libapparmor1  python3-apparmor python3-libapparmor libapparmor-perl -y
+    DEBIAN_FRONTEND=noninteractive aptitude install -f bison linux-generic-hwe-24.04 -y
+    DEBIAN_FRONTEND=noninteractive aptitude install -f apparmor apparmor-profiles apparmor-profiles-extra apparmor-utils libapparmor-dev libapparmor1  python3-apparmor python3-libapparmor libapparmor-perl -y
+}
+
+
+function install_libguestfs() {
+    # https://libguestfs.org/guestfs-building.1.html
+    cd /opt || return
+    echo "[+] Check for previous version of LibGuestFS"
+    sudo dpkg --purge --force-all "libguestfs-*" 2>/dev/null || true
+
+    curl -1sLf "https://github.com/rabbitmq/signing-keys/releases/download/2.0/rabbitmq-release-signing-key.asc" | sudo gpg --dearmor | sudo tee /usr/share/keyrings/com.github.rabbitmq.signing.gpg > /dev/null
+    curl -1sLf "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xf77f1eda57ebb1cc" | sudo gpg --dearmor | sudo tee /usr/share/keyrings/net.launchpad.ppa.rabbitmq.erlang.gpg > /dev/null
+    echo "deb [signed-by=/usr/share/keyrings/net.launchpad.ppa.rabbitmq.erlang.gpg] http://ppa.launchpad.net/rabbitmq/rabbitmq-erlang/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/erlang.list
+    echo "deb-src [signed-by=/usr/share/keyrings/net.launchpad.ppa.rabbitmq.erlang.gpg] http://ppa.launchpad.net/rabbitmq/rabbitmq-erlang/ubuntu $(lsb_release -sc) main" >> /etc/apt/sources.list.d/erlang.list
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq -f apt-transport-https parted libyara8 erlang-dev gperf flex bison libaugeas-dev libhivex-dev supermin ocaml-nox libhivex-ocaml genisoimage libhivex-ocaml-dev libmagic-dev libjansson-dev gnulib jq ocaml-findlib -y
+    sudo apt update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq -f erlang -y
+
+    if [ ! -d libguestfs ]; then
+        #ToDo move to latest release not latest code
+        #_info=$(curl -s https://api.github.com/repos/libguestfs/libguestfs/releases/latest)
+        #_version=$(echo $_info |jq .tag_name|sed "s/\"//g")
+        #_repo_url=$(echo $_info | jq ".zipball_url" | sed "s/\"//g")
+        #wget -q $_repo_url
+        #unzip $_version
+        DEBIAN_FRONTEND=noninteractive apt install -yq libzstd-dev
+        git clone --depth=1 --single-branch --recursive --no-recurse-submodules https://github.com/libguestfs/libguestfs
+        cd libguestfs
+        git fetch --depth=1 origin ${LIBGUESTFS_GITHUB_SHA}
+        git checkout ${LIBGUESTFS_GITHUB_SHA}
+        cd ..
+#        git clone --depth=1 --single-branch --recursive --no-recurse-submodules git://git.annexia.org/ocaml-augeas.git
+        wget -O - https://download.libguestfs.org/ocaml-augeas/ocaml-augeas-0.7.tar.gz | tar -xz
+        cd ocaml-augeas-0.7
+        autoreconf --install
+        ./configure
+        make
+        make install
+        cd ..
+        rm -rf ocaml-augeas-0.7
+    fi
+    cd libguestfs || return
+    git submodule update --init
+    autoreconf -i
+    ./configure CFLAGS=-fPIC
+    make -j"$(getconf _NPROCESSORS_ONLN)"
+
+    # Install virt tools that are in a diff repo since LIBGUESTFS 1.46 split
+    # More Info: https://listman.redhat.com/archives/libguestfs/2021-September/msg00153.html
+    cd /opt || return
+    if [ ! -d guestfs-tools ]; then
+      git clone --recursive https://github.com/rwmjones/guestfs-tools.git
+      cd guestfs-tools
+      git fetch --depth=1 origin ${LIBGUESTFS_TOOLS_GITHUB_SHA}
+      git checkout ${LIBGUESTFS_TOOLS_GITHUB_SHA}
+      cd ../
+    fi
+    cd guestfs-tools || return
+    # Following tips to compile the guestfs-tools as depicted in https://www.mail-archive.com/libguestfs@redhat.com/msg22408.html
+    git submodule update --init --force
+    autoreconf -i
+    # https://github.com/libguestfs/libguestfs/blob/a47e2cf6a8972a7e81561c6b1959dadeeacc9dbe/docs/guestfs-release-notes-1.44.pod#internals
+    ../libguestfs/run ./configure CFLAGS=-fPIC CPPFLAGS=-I/opt/libguestfs/include
+    ../libguestfs/run make -j $(getconf _NPROCESSORS_ONLN)
+
+    echo "[+] /opt/libguestfs/run --help"
+    echo "[+] /opt/libguestfs/run /opt/guestfs-tools/sparsify/virt-sparsify -h"
 }
 
 
@@ -408,14 +475,14 @@ function install_libvirt() {
 
     # remove old
     apt-get purge libvirt0 libvirt-bin -y
-    apt-mark hold libvirt0 libvirt-bin
+    apt-mark hold libvirt0 libvirt-bin || true
 
     # In Ubuntu 22.04 the libvirt0 package is named libvirt
-    apt-get purge libvirt libvirt-bin -y
-    apt-mark hold libvirt libvirt-bin
+    apt-get purge libvirt libvirt-bin -y || true
+    apt-mark hold libvirt libvirt-bin || true
 
     # Remove any library binaries that might have been leftover
-    rm -f /usr/local/lib/x86_64-linux-gnu/libvirt*
+    rm -f /usr/local/lib/x86_64-linux-gnu/libvirt*  || true
 
     if [ ! -f /etc/apt/preferences.d/cape ]; then
     # set to hold to avoid side problems
@@ -448,8 +515,8 @@ EOH
     apt-mark hold qemu
     echo "qemu hold" | sudo dpkg --set-selections 2>/dev/null
     echo "[+] Checking/deleting old versions of Libvirt"
-    apt-get purge libvirt0 libvirt-bin libvirt-$libvirt_version 2>/dev/null
-    dpkg -l|grep "libvirt-[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all 2>/dev/null
+#    apt-get purge libvirt0 libvirt-bin libvirt-$libvirt_version 2>/dev/null
+#    dpkg -l|grep "libvirt-[0-9]\{1,2\}\.[0-9]\{1,2\}\.[0-9]\{1,2\}"|cut -d " " -f 3|sudo xargs dpkg --purge --force-all 2>/dev/null
     apt-get install meson plocate libxml2-utils gnutls-bin  gnutls-dev libxml2-dev bash-completion libreadline-dev numactl libnuma-dev python3-docutils flex libjson-c-dev pylint pycodestyle -y
     # Remove old links
     updatedb
@@ -471,7 +538,7 @@ EOH
     else
         wget -q https://libvirt.org/sources/libvirt-$libvirt_version.tar.xz
         wget -q https://libvirt.org/sources/libvirt-$libvirt_version.tar.xz.asc
-        gpg --verify "libvirt-$libvirt_version.tar.xz.asc"
+#        gpg --verify "libvirt-$libvirt_version.tar.xz.asc"
     fi
     tar xf libvirt-$libvirt_version.tar.xz
     cd libvirt-$libvirt_version || return
@@ -537,6 +604,10 @@ EOH
     sed -i 's/#auth_unix_rw = "none"/auth_unix_rw = "none"/g' /etc/libvirt/*.conf
     sed -i 's/#auth_unix_ro = "polkit"/auth_unix_ro = "none"/g' /etc/libvirt/*.conf
     sed -i 's/#auth_unix_rw = "polkit"/auth_unix_rw = "none"/g' /etc/libvirt/*.conf
+    sed -i 's/#listen_tcp = 1/listen_tcp = 1/g' /etc/libvirt/*.conf
+    sed -i 's/#listen_tls = 0/listen_tls = 0/g' /etc/libvirt/*.conf
+    sed -i 's/#auth_tcp = "sasl"/auth_tcp= "none"/g' /etc/libvirt/*.conf
+    sed -i 's/#tcp_port = "16509"/tcp_port = "16509"/g' /etc/libvirt/*.conf
 
     #echo "[+] Setting AppArmor for libvirt/kvm/qemu"
     sed -i 's/#security_driver = "selinux"/security_driver = "apparmor"/g' /etc/libvirt/qemu.conf
@@ -548,7 +619,7 @@ EOH
     )
     for file in "${FILES[@]}"; do
         if [ -f "$file" ]; then
-            sudo aa-complain "$file"
+            sudo aa-complain "$file" || true
         fi
     done
 
@@ -590,23 +661,26 @@ EOH
         # check links
         # sudo ln -s /usr/lib64/libvirt-qemu.so /lib/x86_64-linux-gnu/libvirt-qemu.so.0
         # sudo ln -s /usr/lib64/libvirt.so.0 /lib/x86_64-linux-gnu/libvirt.so.0
+#        systemctl enable virtqemud.service virtnetworkd.service virtstoraged.service virtqemud.socket
 
         # On Ubuntu 24.04 it introduces /etc/libvirt/network.conf
         if [ -f /etc/libvirt/network.conf ]; then
             sed -i 's/#firewall_backend = "nftables"/firewall_backend = "iptables"/g' /etc/libvirt/network.conf
         fi
 
+#        sed -i 's/^Type=notify-reload/Type=simple/' /lib/systemd/system/libvirtd.service
+#        sed -i 's|^ExecStart=/usr/sbin/libvirtd $LIBVIRTD_ARGS|ExecStart=/usr/sbin/libvirtd --timeout 120|' /lib/systemd/system/libvirtd.service
+
         systemctl enable virtqemud.service virtnetworkd.service virtstoraged.service virtqemud.socket libvirtd.service
-        systemctl start libvirtd.service
+#        systemctl start libvirtd.service
         echo "[+] You should logout and login "
     fi
-
 }
 
 function install_virt_manager() {
     #  pm-utils
     # from build-dep
-    aptitude install -f libgirepository1.0-dev gtk-doc-tools python3 python3-pip gir1.2-govirt-1.0 libgovirt-dev \
+    DEBIAN_FRONTEND=noninteractive aptitude install -yq -f libgirepository1.0-dev gtk-doc-tools python3 python3-pip gir1.2-govirt-1.0 libgovirt-dev \
     libgovirt-common libgovirt2 unzip intltool augeas-doc ifupdown wodim cdrkit-doc indicator-application \
     augeas-tools radvd auditd systemtap nfs-common zfsutils python-openssl-doc samba \
     debootstrap sharutils-doc ssh-askpass gnome-keyring\
@@ -642,7 +716,7 @@ function install_virt_manager() {
     # moved out as some 20.04 doesn't have this libs %)
     aptitude install -f -y python3-ntlm-auth libpython3-stdlib libbrlapi-dev libgirepository1.0-dev python3-testresources
     apt-get -y -o Dpkg::Options::="--force-overwrite" install ovmf
-    PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install tqdm requests six urllib3 ipaddr ipaddress idna dbus-python certifi lxml cryptography pyOpenSSL chardet asn1crypto pycairo PySocks PyGObject pylint pytest
+    PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --ignore-installed tqdm requests six urllib3 ipaddr ipaddress idna dbus-python certifi lxml cryptography pyOpenSSL chardet certvalidator asn1crypto mscerts pycairo PySocks PyGObject pylint pytest
 
     # not available in 22.04
     if [ $(lsb_release -sc) != "jammy" ]; then
@@ -696,8 +770,8 @@ function install_virt_manager() {
     fi
 
     sudo glib-compile-schemas --strict /usr/share/glib-2.0/schemas/
-    systemctl enable virtstoraged.service && systemctl start virtstoraged.service
-    systemctl enable libvirtd.service && systemctl start libvirtd.service
+    systemctl enable virtstoraged.service #&& systemctl start virtstoraged.service
+    systemctl enable libvirtd.service #&& systemctl start libvirtd.service
 
     # i440FX-Issue Win7: Unable to complete install: 'XML error: The PCI controller with index='0' must be model='pci-root' for this machine type, but model='pcie-root' was found instead'
     # Workaround: Edit Overiew in XML view and delete all controller entries with type="pci"
@@ -715,11 +789,12 @@ function install_kvm_linux() {
     # WSL support
     aptitude install -f gcc make gnutls-bin -y
     install_libvirt
+    echo "install_libvirt complete"
 
-    systemctl enable libvirtd.service virtlogd.socket
-    systemctl restart libvirtd.service virtlogd.socket
+    systemctl enable virtlogd.socket
+    systemctl restart virtlogd.socket
 
-    kvm-ok
+    kvm-ok || true
 
     if ! grep -q -E '^net.bridge.bridge-nf-call-ip6tables' /etc/sysctl.conf; then
         cat >> /etc/sysctl.conf << EOF
@@ -731,18 +806,18 @@ EOF
     # Ubuntu 18.04:
     # /dev/kvm permissions always changed to root after reboot
     # "chown root:libvirt /dev/kvm" doesnt help
-    addgroup kvm
-    usermod -a -G kvm "$(whoami)"
+    addgroup kvm || true
+    usermod -a -G kvm "$(whoami)" || true
     if [[ -n "$username" ]]; then
         usermod -a -G kvm "$username"
     fi
-    chgrp kvm /dev/kvm
+    chgrp kvm /dev/kvm || true
     if [ ! -f /etc/udev/rules.d/50-qemu-kvm.rules ]; then
         echo 'KERNEL=="kvm", GROUP="kvm", MODE="0660"' >> /etc/udev/rules.d/50-qemu-kvm.rules
     fi
 
-    echo 1 > /sys/module/kvm/parameters/ignore_msrs
-    echo 0 > /sys/module/kvm/parameters/report_ignored_msrs
+    echo 1 > /sys/module/kvm/parameters/ignore_msrs || true
+    echo 0 > /sys/module/kvm/parameters/report_ignored_msrs || true
 
     if [ ! -f /etc/modprobe.d/kvm.conf ]; then
         cat >> /etc/modprobe.d/kvm.conf << EOF
@@ -826,19 +901,27 @@ function replace_seabios_clues_public() {
     done
 }
 
+function install_jemalloc() {
+
+    # https://zapier.com/engineering/celery-python-jemalloc/
+    if ! $(dpkg -l "libjemalloc*" | grep -q "ii  libjemalloc"); then
+        DEBIAN_FRONTEND=noninteractive apt-get install -f curl build-essential jq autoconf libjemalloc-dev -y
+    fi
+}
+
 function install_qemu() {
     cd /tmp || return
 
     echo '[+] Cleaning QEMU old install if exists'
-    rm -r /usr/share/qemu >/dev/null 2>&1
+#    rm -r /usr/share/qemu >/dev/null 2>&1
     dpkg -r ubuntu-vm-builder python-vm-builder >/dev/null 2>&1
-    dpkg -l |grep qemu |cut -d " " -f 3|xargs dpkg --purge --force-all >/dev/null 2>&1
+#    dpkg -l |grep qemu |cut -d " " -f 3|xargs dpkg --purge --force-all >/dev/null 2>&1
 
     echo '[+] Downloading QEMU source code'
     if [ ! -f qemu-$qemu_version.tar.xz ]; then
         wget -q "https://download.qemu.org/qemu-$qemu_version.tar.xz"
         wget -q "https://download.qemu.org/qemu-$qemu_version.tar.xz.sig"
-        gpg --verify "qemu-$qemu_version.tar.xz.sig"
+#        gpg --verify "qemu-$qemu_version.tar.xz.sig"
     fi
 
     if [ ! -f qemu-$qemu_version.tar.xz ]; then
@@ -956,7 +1039,7 @@ function install_seabios() {
     echo '[+] Installing SeaBios dependencies'
     aptitude install -f git acpica-tools -y
     if [ ! -f "seabios_${seabios_version}.tar.gz" ]; then
-        rm "seabios_${seabios_version}"
+        rm "seabios_${seabios_version}" || true
         wget https://github.com/coreboot/seabios/archive/refs/tags/rel-${seabios_version}.tar.gz -O "seabios_${seabios_version}.tar.gz"
     fi
 
@@ -970,11 +1053,11 @@ function install_seabios() {
         # make help
         # make menuconfig -> BIOS tables -> disable Include default ACPI DSDT
         # get rid of this hack
-        sed -i 's/CONFIG_XEN=y/CONFIG_XEN=n/g' .config
-        sed -i 's/PYTHON=python/PYTHON=python3/g' Makefile
-        # PIP_BREAK_SYSTEM_PACKAGES=1 make -j"$(nproc)" 2>/dev/null
+        make -j"$(getconf _NPROCESSORS_ONLN)" || true
         # Windows 10(latest rev.) is uninstallable without ACPI_DSDT
         # sed -i 's/CONFIG_ACPI_DSDT=y/CONFIG_ACPI_DSDT=n/g' .config
+        sed -i 's/CONFIG_XEN=y/CONFIG_XEN=n/g' .config
+        sed -i 's/PYTHON=python/PYTHON=python3/g' Makefile
         if PIP_BREAK_SYSTEM_PACKAGES=1 make -j "$(nproc)"; then
             echo '[+] Replacing old bios.bin to new out/bios.bin'
             bios=0
