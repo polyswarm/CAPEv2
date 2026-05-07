@@ -973,7 +973,8 @@ function dependencies() {
     sudo apt-get install -y libgraphviz-dev
 
     # APT poetry is ultra outdated
-    curl -sSL https://install.python-poetry.org | POETRY_HOME=/etc/poetry python3 -
+    # Pin to known-good version - newer releases have broken %(ENV:...)s config resolution in CAPE's custom/conf
+    curl -sSL https://install.python-poetry.org | POETRY_HOME=/etc/poetry python3 - --version 2.3.2
     echo "PATH=$PATH:/etc/poetry/bin/" >> /etc/bash.bashrc
     source /etc/bash.bashrc
     poetry self add poetry-plugin-shell
