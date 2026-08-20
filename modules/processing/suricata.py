@@ -98,7 +98,19 @@ class Suricata(Processing):
             "dns_log_full_path": None,
         }
 
-        tls_items = ("fingerprint", "issuerdn", "version", "subject", "sni", "ja3", "ja3s", "serial", "notbefore", "notafter")
+        tls_items = (
+            "fingerprint",
+            "issuerdn",
+            "version",
+            "subject",
+            "sni",
+            "ja3",
+            "ja3s",
+            "ja4",
+            "serial",
+            "notbefore",
+            "notafter",
+        )
 
         SURICATA_ALERT_LOG_FULL_PATH = f"{self.logs_path}/{SURICATA_ALERT_LOG}"
         SURICATA_TLS_LOG_FULL_PATH = f"{self.logs_path}/{SURICATA_TLS_LOG}"
